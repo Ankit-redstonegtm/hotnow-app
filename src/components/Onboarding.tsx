@@ -87,13 +87,22 @@ export default function Onboarding() {
     } finally { stop(); }
   }
 
-  // Poll a status endpoint until status==='done' (or throw on 'failed'/timeout).
+  // Poll a status endpoint until status==='done'. Tolerant of transient non-JSON
+  // responses (e.g. a one-off edge/timeout) — those are ignored and polling continues.
   async function pollUntilDone(url: string, maxTries: number): Promise<any> {
     for (let i = 0; i < maxTries; i++) {
       await new Promise((r) => setTimeout(r, 5000));
-      const j = await fetch(url).then((r) => r.json());
-      if (j.status === "done") return j;
-      if (j.status === "failed") throw new Error(j.error || "The research step failed. Please try again.");
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        let j: any;
+        try { j = JSON.parse(text); } catch { continue; } // not JSON → transient, keep polling
+        if (j.status === "done") return j;
+        if (j.status === "failed") throw new Error(j.error || "That step failed. Please try again.");
+      } catch (err) {
+        if (err instanceof Error && /failed/i.test(err.message)) throw err;
+        // network blip → keep polling
+      }
     }
     throw new Error("This is taking longer than expected. Please try again in a moment.");
   }

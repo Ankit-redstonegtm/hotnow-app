@@ -15,11 +15,12 @@ function key(): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function call<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T = any>(method: string, path: string, body?: unknown, timeoutMs = 45000): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: { "x-api-key": key(), "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await res.text();
   let json: any;
@@ -91,20 +92,26 @@ export async function taskCreate(opts: {
   return { runId };
 }
 
-/** Non-blocking single check of a Task run. */
+/**
+ * Non-blocking single check of a Task run. IMPORTANT: the /result endpoint
+ * long-polls (blocks until the run finishes), so we check STATUS first and only
+ * fetch /result once the run is actually complete — otherwise a poll would hang
+ * past the serverless function limit.
+ */
 export async function taskCheck<T = any>(
   runId: string,
 ): Promise<{ done: boolean; failed: boolean; content?: T; basis?: Basis[] }> {
-  const r = await call<any>("GET", `/v1/tasks/runs/${runId}/result`).catch((e) => ({ _err: String(e) }));
-  if (r && !r._err && (r.output || r.result)) {
-    const out = r.output ?? r.result ?? {};
-    const content = out.content ?? out.values ?? out;
-    return { done: true, failed: false, content: content as T, basis: normalizeBasis(out.basis) };
+  const status = await call<any>("GET", `/v1/tasks/runs/${runId}`, undefined, 20000).catch(() => ({}));
+  const s = String(status.status || status.run?.status || status.state || "");
+  if (/failed|error|cancel|expired/i.test(s)) return { done: false, failed: true };
+  if (!/completed|succeeded|success|finished|done/i.test(s)) {
+    return { done: false, failed: false }; // queued / running
   }
-  const status = await call<any>("GET", `/v1/tasks/runs/${runId}`).catch(() => ({}));
-  const s = String(status.status || status.state || "");
-  if (/failed|error|cancel/i.test(s)) return { done: false, failed: true };
-  return { done: false, failed: false };
+  // terminal success → result returns immediately now
+  const r = await call<any>("GET", `/v1/tasks/runs/${runId}/result`, undefined, 30000);
+  const out = r.output ?? r.result ?? {};
+  const content = out.content ?? out.values ?? out;
+  return { done: true, failed: false, content: content as T, basis: normalizeBasis(out.basis) };
 }
 
 // ---------------------------------------------------------------------------
