@@ -48,15 +48,31 @@ export function toSituation(s: any): BuyingSituation {
 }
 
 /**
- * Ingest one discovery run if (and only if) it has reached a terminal state.
- * Idempotent-safe to call repeatedly: if the provider run is still active it
- * returns { status: "running" } and writes nothing.
+ * Ingest a discovery run's results - INCREMENTALLY while it runs, then finalize.
+ *
+ * FindAll's /result endpoint returns a live snapshot of every candidate found so
+ * far, each tagged matched/generated/unmatched/discarded. So on each poll tick we
+ * qualify + upsert the matched ones RIGHT AWAY instead of waiting for the whole
+ * run - the user sees their first lead in ~90s instead of ~8min, with no change to
+ * the final set. This is safe to call repeatedly: upsertOpportunity dedupes on
+ * UNIQUE(seller, company, situation), so re-processing the growing snapshot each
+ * tick never double-inserts - it only surfaces genuinely-new matches.
+ *
+ * The run is left "running" (and keeps being polled) until the provider reports a
+ * terminal state; only then do we stamp completed_at + final counts. A transient
+ * error mid-run is swallowed (status "running") so a single bad snapshot fetch
+ * can't kill a run that's still going - we just retry on the next tick.
  */
 export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation): Promise<IngestResult> {
+  let st;
   try {
-    const st = await discoveryStatus(run.provider_job_id);
-    if (st.isActive) return { runId: run.id, status: "running", matched: st.matchedCount };
+    st = await discoveryStatus(run.provider_job_id);
+  } catch (err) {
+    // Couldn't even read status - treat as a transient blip, don't touch the run.
+    return { runId: run.id, status: "running", error: err instanceof Error ? err.message : "status error" };
+  }
 
+  try {
     const { candidates } = await discoveryResult(run.provider_job_id);
 
     let sit = situation;
@@ -81,6 +97,14 @@ export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation
     }
 
     const matched = candidates.filter((c) => /^matched$/i.test(String(c.matchStatus))).length;
+
+    // Still active: the matched leads above are already persisted + visible. Keep
+    // the run open so the dashboard keeps polling for the rest.
+    if (st.isActive) {
+      return { runId: run.id, status: "running", matched, newOpps };
+    }
+
+    // Terminal: finalize with the authoritative final counts.
     await updateRun(admin, run.id, {
       status: "completed",
       completed_at: new Date().toISOString(),
@@ -91,6 +115,8 @@ export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation
     return { runId: run.id, status: "completed", matched, newOpps };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "ingest error";
+    // A hiccup while the run is still going shouldn't fail it - retry next tick.
+    if (st.isActive) return { runId: run.id, status: "running", error: msg };
     await updateRun(admin, run.id, { status: "failed", completed_at: new Date().toISOString(), error: msg });
     return { runId: run.id, status: "failed", error: msg };
   }
