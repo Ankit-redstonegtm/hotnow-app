@@ -18,20 +18,20 @@ export default async function Home() {
       </header>
 
       <section className="flex-1 flex flex-col items-center justify-center text-center px-6 max-w-2xl mx-auto">
-        <span className="chip mb-6">Autonomous customer discovery</span>
+        <span className="chip mb-6">For B2B sales teams</span>
         <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.08]">
-          Find companies that need<br />what you sell. <span style={{ color: "var(--accent)" }}>Every day.</span>
+          Know who to contact<br />today. <span style={{ color: "var(--accent)" }}>And why.</span>
         </h1>
         <p className="mt-5 text-lg" style={{ color: "var(--muted)" }}>
-          HotNow finds companies experiencing situations that create demand for your
-          product, with evidence explaining why each one matters right now.
+          HotNow finds companies going through changes that could make them need what
+          you sell, and gives you a reason to reach out with the evidence behind it.
         </p>
         <div className="mt-8 flex items-center gap-3">
-          <Link href="/signup" className="btn btn-primary px-6 py-3 text-base">Find my customers</Link>
+          <Link href="/signup" className="btn btn-primary px-6 py-3 text-base">Find my opportunities</Link>
           <Link href="/login" className="btn btn-ghost px-6 py-3 text-base">Log in</Link>
         </div>
         <p className="mt-6 text-xs" style={{ color: "var(--faint)" }}>
-          Enter your domain. Confirm what we understand. Get real opportunities with sources.
+          Enter your website. We learn what you sell and find companies worth contacting.
         </p>
       </section>
     </main>

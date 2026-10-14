@@ -57,7 +57,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
           {mode === "signup" ? "Create your account" : "Welcome back"}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-          {mode === "signup" ? "Start finding customers in minutes." : "Log in to your workspace."}
+          {mode === "signup" ? "Start finding companies worth contacting." : "Log in to your workspace."}
         </p>
 
         <button onClick={google} className="btn btn-ghost w-full mt-6 gap-2.5">

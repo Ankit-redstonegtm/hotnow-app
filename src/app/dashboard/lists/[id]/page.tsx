@@ -52,7 +52,7 @@ export default function ListDetailPage({ params }: { params: Promise<{ id: strin
                   <tr key={it.id}><td className="font-medium">{it.contacts.full_name}</td><td style={{ color: "var(--muted)" }}>{it.contacts.title}</td><td><span className={`pill pill-${it.contacts.priority?.toLowerCase()}`}>{it.contacts.priority}</span></td><td>{it.contacts.companies?.name || it.contacts.companies?.normalized_domain}</td></tr>
                 ))}</tbody></>
             ) : (
-              <><thead><tr><th>Company</th><th>Signal</th><th>What happened</th></tr></thead>
+              <><thead><tr><th>Company</th><th>Signal</th><th>What's happening</th></tr></thead>
                 <tbody>{items.map((it) => it.opportunities && (
                   <tr key={it.id}><td className="font-medium">{it.opportunities.companies?.name || it.opportunities.companies?.normalized_domain}</td><td>{it.opportunities.buying_situations?.name && <span className="pill">{it.opportunities.buying_situations.name}</span>}</td><td style={{ color: "var(--muted)", maxWidth: 440 }} className="truncate">{it.opportunities.what_happened}</td></tr>
                 ))}</tbody></>

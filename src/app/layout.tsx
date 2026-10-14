@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HotNow: Find companies that need what you sell. Every day.",
+  title: "HotNow: Know who to contact today. And why.",
   description:
-    "HotNow finds companies experiencing situations that create demand for your product, with evidence explaining why.",
+    "HotNow finds companies going through changes that could make them need what you sell, and gives you a reason to reach out with the evidence behind it.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

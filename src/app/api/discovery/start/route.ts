@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       .slice(0, max);
 
     if (situations.length === 0) {
-      return NextResponse.json({ launched: [], message: "no enabled situations to run" });
+      return NextResponse.json({ launched: [], message: "Turn on at least one signal first." });
     }
 
     const launched: Array<{ runId: string; situationId: string; name: string }> = [];

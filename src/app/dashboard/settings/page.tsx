@@ -57,8 +57,8 @@ export default function SettingsPage() {
           </div>
 
           <div className="card p-6">
-            <h2 className="font-semibold">Daily discovery</h2>
-            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Automatic daily discovery is coming soon. For now, run discovery from the Pain-Qualified Signals tab whenever you want fresh companies.</p>
+            <h2 className="font-semibold">Daily opportunities</h2>
+            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>New opportunities on a set schedule are coming soon. For now, start a search from the Pain-Qualified Signals tab whenever you want fresh companies.</p>
           </div>
         </>
       )}

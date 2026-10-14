@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ---- HotNow design system — Prospeo-inspired: clean warm-white, vivid red,
+/* ---- HotNow design system, clean warm-white, vivid red,
    rounded, data-dense. Light only for v2. ---- */
 :root {
   --bg: #faf8f6;

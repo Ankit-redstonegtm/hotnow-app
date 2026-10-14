@@ -146,7 +146,7 @@ export default function CompaniesPage() {
       ) : opps.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="font-medium">No companies yet</p>
-          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Turn on a Pain-Qualified Signal and run discovery to see companies here.</p>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Turn on a signal and start a search to see companies here.</p>
         </div>
       ) : (
         <div className="card overflow-x-auto">
@@ -154,7 +154,7 @@ export default function CompaniesPage() {
             <thead>
               <tr>
                 <th style={{ width: 36 }}><input type="checkbox" checked={sel.size === opps.length && opps.length > 0} onChange={toggleAll} className="accent-[var(--accent)]" /></th>
-                <th>Company</th><th>Signal</th><th>What happened</th><th>Confidence</th><th>Evidence</th>
+                <th>Company</th><th>Signal</th><th>What's happening</th><th>Confidence</th><th>Evidence</th>
               </tr>
             </thead>
             <tbody>

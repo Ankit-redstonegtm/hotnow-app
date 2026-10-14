@@ -40,16 +40,16 @@ export default function OverviewPage() {
       <div className="flex items-end justify-between flex-wrap gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>Your pipeline of companies with a reason to buy, right now.</p>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>The companies worth contacting right now, and the reason behind each.</p>
         </div>
         <Link href="/dashboard/signals" className="btn btn-primary">Find opportunities</Link>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="New opportunities" value={newCount} accent />
-        <Stat label="Total companies" value={opps.length} />
-        <Stat label="Active signals" value={signals} />
-        <Stat label="Discovery" value={running > 0 ? `${running} running` : "Idle"} small />
+        <Stat label="Companies found" value={opps.length} />
+        <Stat label="Situations we're watching" value={signals} />
+        <Stat label="Status" value={running > 0 ? `${running} running` : "Idle"} small />
       </div>
 
       {running > 0 && (
@@ -68,14 +68,18 @@ export default function OverviewPage() {
         <div className="card p-6"><div className="skeleton h-5 w-40 rounded" /></div>
       ) : opps.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-medium">No opportunities yet</p>
-          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Enable a Pain-Qualified Signal and run discovery. We never invent results.</p>
-          <Link href="/dashboard/signals" className="btn btn-primary mt-4">Go to Signals</Link>
+          <p className="font-medium">{running > 0 ? "Your first opportunities are on the way" : "No opportunities yet"}</p>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
+            {running > 0
+              ? "We're looking for companies in a situation that fits what you sell. They appear here as we verify them."
+              : "Turn on a signal and start a search. We only show companies backed by real evidence."}
+          </p>
+          <Link href="/dashboard/signals" className="btn btn-primary mt-4">Choose what to look for</Link>
         </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Company</th><th>Signal</th><th>What happened</th><th></th></tr></thead>
+            <thead><tr><th>Company</th><th>Signal</th><th>What's happening</th><th></th></tr></thead>
             <tbody>
               {opps.slice(0, 8).map((o) => (
                 <tr key={o.id}>

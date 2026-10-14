@@ -31,7 +31,7 @@ export default function SignalsPage() {
       const res = await fetch("/api/discovery/start", { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Could not start.");
-      if ((j.launched ?? []).length === 0) { setMsg(j.message || "Enable at least one signal first."); setBusy(false); return; }
+      if ((j.launched ?? []).length === 0) { setMsg(j.message || "Turn on at least one signal first."); setBusy(false); return; }
       router.push("/dashboard/companies");
     } catch (e) { setMsg(e instanceof Error ? e.message : "error"); setBusy(false); }
   }
@@ -43,7 +43,7 @@ export default function SignalsPage() {
       <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pain-Qualified Signals</h1>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>Observable events at your buyers that create a reason to buy. Enable the ones to watch, then run discovery.</p>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>The situations that make a company need what you sell. Turn on the ones worth watching, then start a search.</p>
         </div>
         <button className="btn btn-primary" onClick={run} disabled={busy || enabled === 0}>{busy ? "Starting…" : `Find opportunities (${enabled})`}</button>
       </div>
@@ -54,8 +54,8 @@ export default function SignalsPage() {
         <div className="card p-6"><div className="skeleton h-5 w-56 rounded" /></div>
       ) : signals.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-medium">No signals yet</p>
-          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Finish onboarding to generate your Pain-Qualified Signals.</p>
+          <p className="font-medium">Let's figure out what makes companies need your product</p>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Finish setup and we'll suggest a few situations worth watching to start finding opportunities.</p>
         </div>
       ) : (
         <div className="space-y-3">
