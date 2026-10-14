@@ -53,10 +53,11 @@ export async function sourceContactsForCompany(
     deduped.push(e);
   }
 
-  return { companyLinkedin, contacts: deduped.map((e) => ({ ...e, priority: classify(e) })) };
+  return { companyLinkedin, contacts: deduped.map((e) => ({ ...e, priority: classifyContact(e) })) };
 }
 
-function classify(e: BlitzEmployee): "P1" | "P2" | "P3" {
+/** Tier a decision-maker: P1 = economic buyer, P2 = champion/influencer, P3 = wider team. */
+export function classifyContact(e: Pick<BlitzEmployee, "title" | "jobLevel">): "P1" | "P2" | "P3" {
   const t = `${e.title || ""}`.toLowerCase();
   const lvl = (e.jobLevel || "").toLowerCase();
   const p1Title = /\b(chief|founder|co-?founder|owner|president|ceo|cro|cmo|cfo|coo|cto|cio|cpo|cxo|svp|evp|vp|vice president|head of|managing director|partner)\b/;

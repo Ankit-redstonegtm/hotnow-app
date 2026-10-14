@@ -1,12 +1,22 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { downloadCSV } from "@/lib/csv";
+import { EmailStatusBadge, type EmailStatus } from "@/components/ui/Badge";
 
 type Contact = {
   id: string; full_name: string; title: string; linkedin_url: string; priority: string; email: string | null;
+  email_status?: EmailStatus;
   job_level: string | null; job_function: string | null;
   companies: { normalized_domain: string; name: string } | null;
 };
+
+/** Trust the backend status; fall back only when it's absent. Never upgrade to "verified". */
+function emailStatusOf(c: Contact): EmailStatus {
+  if (c.email_status != null) return c.email_status;
+  if (c.email) return "found";
+  if (c.email === "") return "none";
+  return "unknown";
+}
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -134,9 +144,10 @@ export default function ContactsPage() {
                   <td style={{ color: "var(--muted)", maxWidth: 280 }} className="truncate">{c.title}</td>
                   <td><span className={`pill pill-${c.priority.toLowerCase()}`}>{c.priority}</span></td>
                   <td>
-                    {c.email
-                      ? <a href={`mailto:${c.email}`} className="text-xs underline" style={{ color: "var(--accent-ink)" }}>{c.email}</a>
-                      : <span className="text-xs" style={{ color: "var(--faint)" }}>{working ? "finding…" : "not found"}</span>}
+                    <div className="flex flex-col gap-1 items-start">
+                      <EmailStatusBadge status={emailStatusOf(c)} checking={working && !c.email} />
+                      {c.email && <a href={`mailto:${c.email}`} className="text-xs underline" style={{ color: "var(--accent-ink)" }}>{c.email}</a>}
+                    </div>
                   </td>
                   <td>{c.companies?.name || c.companies?.normalized_domain}</td>
                   <td>{c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "var(--accent-ink)" }}>profile ↗</a>}</td>

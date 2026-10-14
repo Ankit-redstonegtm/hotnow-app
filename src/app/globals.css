@@ -169,3 +169,83 @@ body {
 @keyframes shimmer { 100% { transform: translateX(100%); } }
 .skeleton { position: relative; overflow: hidden; background: var(--surface-2); }
 .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent); animation: shimmer 1.4s infinite; }
+
+/* ============================================================
+   UI primitives (appended) — Badge, Toast
+   Visual language matches .pill / .card; tokens reused above.
+   ============================================================ */
+
+/* ---- Badge: small rounded label, sibling of .pill ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .01em;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* ---- Toast: fixed bottom-right stack ---- */
+.toast-viewport {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 36px));
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--toast-accent, var(--fg));
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(24,23,26,.04), 0 12px 28px -14px rgba(24,23,26,.22);
+  animation: toast-in .24s cubic-bezier(.22,1,.36,1);
+}
+.toast-leave { animation: toast-out .22s ease forwards; }
+.toast-ico { flex: 0 0 auto; display: grid; place-items: center; margin-top: 1px; }
+.toast-body { flex: 1 1 auto; min-width: 0; }
+.toast-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+.toast-desc { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.toast-close {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 22px; height: 22px;
+  margin: -2px -2px 0 0;
+  border-radius: 7px;
+  color: var(--faint);
+  transition: background .12s, color .12s;
+  cursor: pointer;
+}
+.toast-close:hover { background: var(--surface-2); color: var(--muted); }
+.toast-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(6px) scale(.98); }
+}
+
+/* ---- Respect reduced-motion for every animated primitive ---- */
+@media (prefers-reduced-motion: reduce) {
+  .spin, .dot, .flow-dot, .skeleton::after,
+  .toast, .toast-leave {
+    animation: none !important;
+  }
+}

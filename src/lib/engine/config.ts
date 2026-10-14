@@ -36,6 +36,10 @@ export const LIMITS = {
   maxSituationsPerDailyRun: 5,
   /** hard dollar ceiling per single discovery run */
   maxCostPerRunUSD: 5.0,
+  /** hard dollar ceiling per user per day across all discovery runs (scheduled + manual) */
+  maxDailyCostPerUserUSD: 3.0,
+  /** reconcile: a run still "running" past this is treated as orphaned and re-ingested */
+  stuckRunMinutes: 20,
   /** how fresh evidence must be to qualify (days) */
   freshnessWindowDays: 240,
   /** poll + timeout for async provider runs */

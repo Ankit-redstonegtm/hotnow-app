@@ -94,3 +94,29 @@ export interface Opportunity {
   evidenceDate?: string;
   discoveredAt: string;
 }
+
+// ---------------- Contacts / email ----------------
+/**
+ * Email lookup outcome. 'found' means an address was returned but is NOT verified -
+ * never render it as verified. 'verified' is reserved for an explicit provider
+ * verification signal (none today). null/'unknown' = not yet attempted.
+ */
+export type EmailStatus = "unknown" | "none" | "found" | "verified";
+
+// ---------------- Outreach ----------------
+export type OutreachChannel = "email" | "linkedin";
+
+export interface OutreachFollowup {
+  channel: OutreachChannel;
+  /** days to wait after the previous touch */
+  waitDays: number;
+  subject?: string;
+  body: string;
+}
+
+/** Generated outreach for one opportunity+contact, grounded in stored evidence only. */
+export interface OutreachContent {
+  email?: { subject: string; body: string };
+  linkedin?: { body: string };
+  followups?: OutreachFollowup[];
+}

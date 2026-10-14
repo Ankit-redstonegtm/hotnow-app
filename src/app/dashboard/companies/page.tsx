@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { downloadCSV } from "@/lib/csv";
+import { ConfidenceBadge } from "@/components/ui/Badge";
 
 type Opp = {
   id: string; what_happened: string; why_it_matters: string; confidence: string; evidence_date: string | null; status: string;
@@ -12,6 +14,7 @@ type Opp = {
 type Phase = "idle" | "contacts" | "emails" | "done";
 
 export default function CompaniesPage() {
+  const router = useRouter();
   const [opps, setOpps] = useState<Opp[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
@@ -159,16 +162,16 @@ export default function CompaniesPage() {
             </thead>
             <tbody>
               {opps.map((o) => (
-                <tr key={o.id}>
-                  <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} className="accent-[var(--accent)]" /></td>
+                <tr key={o.id} className="cursor-pointer" onClick={() => router.push(`/dashboard/companies/${o.id}`)}>
+                  <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} className="accent-[var(--accent)]" aria-label="Select company" /></td>
                   <td>
                     <div className="font-medium flex items-center gap-2">{o.companies?.name || o.companies?.normalized_domain}{o.status === "new" && <span className="chip">New</span>}</div>
-                    {o.companies?.normalized_domain && <a href={`https://${o.companies.normalized_domain}`} target="_blank" rel="noreferrer" className="text-xs" style={{ color: "var(--faint)" }}>{o.companies.normalized_domain} ↗</a>}
+                    {o.companies?.normalized_domain && <a href={`https://${o.companies.normalized_domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs" style={{ color: "var(--faint)" }}>{o.companies.normalized_domain} ↗</a>}
                   </td>
                   <td>{o.buying_situations?.name && <span className="pill">{o.buying_situations.name}</span>}</td>
                   <td style={{ maxWidth: 420, color: "var(--muted)" }}><div className="line-clamp-2">{o.what_happened}</div></td>
-                  <td><span className="pill">{o.confidence}</span></td>
-                  <td>{o.evidence?.slice(0, 2).map((e, i) => <a key={i} href={e.source_url} target="_blank" rel="noreferrer" className="block text-xs underline" style={{ color: "var(--accent-ink)" }}>source {i + 1} ↗</a>)}</td>
+                  <td><ConfidenceBadge confidence={o.confidence} /></td>
+                  <td>{o.evidence?.slice(0, 2).map((e, i) => <a key={i} href={e.source_url} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="block text-xs underline" style={{ color: "var(--accent-ink)" }}>source {i + 1} ↗</a>)}</td>
                 </tr>
               ))}
             </tbody>

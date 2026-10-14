@@ -239,6 +239,39 @@ export async function upsertCompany(admin: SB, domain: string, name: string): Pr
 }
 
 // ---------------- opportunities + evidence (dedup) ----------------
+const CONFIDENCE_RANK: Record<string, number> = { high: 3, medium: 2, moderate: 2, low: 1 };
+function confRank(c?: string | null): number {
+  return CONFIDENCE_RANK[(c ?? "").toLowerCase()] ?? 0;
+}
+
+/**
+ * Should a re-discovered opportunity REPLACE the existing one's "why now"? Yes when the
+ * new evidence is strictly stronger: higher confidence, or equal confidence but a fresher
+ * evidence date. Pure (no I/O) so the dedup rule is unit-testable.
+ */
+export function isStrongerEvidence(
+  newConf: string | null | undefined,
+  newDate: string | null | undefined,
+  oldConf: string | null | undefined,
+  oldDate: string | null | undefined,
+): boolean {
+  const nr = confRank(newConf);
+  const or = confRank(oldConf);
+  if (nr > or) return true;
+  if (nr < or) return false;
+  return (newDate ?? "") > (oldDate ?? "");
+}
+
+/**
+ * Persist one qualified opportunity for a seller, deduped at the SELLER + COMPANY level
+ * (one company surfaces once per seller, regardless of how many situations match it -
+ * the locked MVP rule). The live UNIQUE(seller, company, situation) stays as a backstop.
+ *
+ * When the same company is re-discovered under a different/stronger situation, we DON'T
+ * create a second opportunity; instead we keep the single row and UPGRADE it in place if
+ * the new evidence is strictly stronger (higher confidence, else fresher date), preserving
+ * the strongest "why now". Weaker re-discoveries only refresh the delivery timestamp.
+ */
 export async function upsertOpportunity(
   admin: SB,
   o: {
@@ -248,22 +281,41 @@ export async function upsertOpportunity(
     runId: string;
     opp: Opportunity;
   },
-): Promise<{ id: string; isNew: boolean }> {
+): Promise<{ id: string; isNew: boolean; upgraded?: boolean }> {
+  const newDate = o.opp.evidenceDate ? o.opp.evidenceDate.slice(0, 10) : null;
+
+  // Seller-level dedup: ignore situation_id so a company already delivered under ANY
+  // situation is not delivered again.
   const existing = await admin
     .from("opportunities")
-    .select("id")
+    .select("id, confidence, evidence_date, situation_id")
     .eq("seller_profile_id", o.sellerProfileId)
     .eq("company_id", o.companyId)
-    .eq("situation_id", o.situationId)
+    .order("first_discovered_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (existing.data?.id) {
-    // already delivered for this (seller, company, situation) - refresh delivery timestamp only
-    await admin.from("opportunities").update({ last_delivered_at: new Date().toISOString() }).eq("id", existing.data.id);
-    return { id: existing.data.id, isNew: false };
+    const stronger = isStrongerEvidence(o.opp.confidence, newDate, existing.data.confidence, existing.data.evidence_date);
+
+    const patch: Record<string, unknown> = { last_delivered_at: new Date().toISOString() };
+    if (stronger) {
+      patch.what_happened = o.opp.whatHappened;
+      patch.why_it_matters = o.opp.whyItMatters;
+      patch.confidence = o.opp.confidence;
+      patch.evidence_date = newDate;
+      patch.situation_id = o.situationId;
+    }
+    await admin.from("opportunities").update(patch).eq("id", existing.data.id);
+
+    // Add any new evidence URLs (keeps the strongest supporting citations around).
+    if (stronger && o.opp.evidence.length) {
+      await addEvidence(admin, existing.data.id, o.opp.whatHappened, o.opp.evidence);
+    }
+    return { id: existing.data.id, isNew: false, upgraded: stronger };
   }
 
-  const { data, error } = await admin
+  const inserted = await admin
     .from("opportunities")
     .insert({
       seller_profile_id: o.sellerProfileId,
@@ -273,23 +325,47 @@ export async function upsertOpportunity(
       what_happened: o.opp.whatHappened,
       why_it_matters: o.opp.whyItMatters,
       confidence: o.opp.confidence,
-      evidence_date: o.opp.evidenceDate ? o.opp.evidenceDate.slice(0, 10) : null,
+      evidence_date: newDate,
       status: "new",
     })
     .select("id")
     .single();
-  if (error) throw new Error(error.message);
 
-  const evidenceRows = o.opp.evidence.map((e) => ({
-    opportunity_id: data.id,
-    reasoning: o.opp.whatHappened,
-    source_url: e.url,
-    source_date: e.date ? safeDate(e.date) : null,
-    citation: e,
-  }));
-  if (evidenceRows.length) await admin.from("evidence").insert(evidenceRows);
+  if (inserted.error) {
+    // Concurrency backstop: a racing insert for the same (seller, company) won. Re-read.
+    const retry = await admin
+      .from("opportunities")
+      .select("id")
+      .eq("seller_profile_id", o.sellerProfileId)
+      .eq("company_id", o.companyId)
+      .limit(1)
+      .maybeSingle();
+    if (retry.data?.id) {
+      await admin.from("opportunities").update({ last_delivered_at: new Date().toISOString() }).eq("id", retry.data.id);
+      return { id: retry.data.id, isNew: false };
+    }
+    throw new Error(inserted.error.message);
+  }
 
-  return { id: data.id, isNew: true };
+  await addEvidence(admin, inserted.data.id, o.opp.whatHappened, o.opp.evidence);
+  return { id: inserted.data.id, isNew: true };
+}
+
+/** Insert evidence rows for an opportunity, skipping source URLs already attached. */
+async function addEvidence(admin: SB, opportunityId: string, reasoning: string, evidence: Opportunity["evidence"]) {
+  if (!evidence.length) return;
+  const existing = await admin.from("evidence").select("source_url").eq("opportunity_id", opportunityId);
+  const have = new Set((existing.data ?? []).map((r: any) => r.source_url));
+  const rows = evidence
+    .filter((e) => e.url && !have.has(e.url))
+    .map((e) => ({
+      opportunity_id: opportunityId,
+      reasoning,
+      source_url: e.url,
+      source_date: e.date ? safeDate(e.date) : null,
+      citation: e,
+    }));
+  if (rows.length) await admin.from("evidence").insert(rows);
 }
 
 export async function getOpportunities(sb: SB, sellerProfileId: string) {
@@ -385,9 +461,14 @@ export async function countContactsNeedingEmail(sb: SB, sellerProfileId: string,
   return count ?? 0;
 }
 
-/** Record an email lookup result. Pass "" to mark "checked, none found" so we never retry. */
+/**
+ * Record an email lookup result. Pass "" to mark "checked, none found" so we never retry.
+ * email_status is set alongside: non-empty → 'found' (UNVERIFIED), "" → 'none'. We never
+ * write 'verified' here - that is reserved for an explicit provider verification signal.
+ */
 export async function setContactEmail(admin: SB, id: string, email: string) {
-  await admin.from("contacts").update({ email }).eq("id", id);
+  const email_status = email ? "found" : "none";
+  await admin.from("contacts").update({ email, email_status }).eq("id", id);
 }
 
 export async function getContacts(sb: SB, sellerProfileId: string) {
@@ -469,4 +550,135 @@ export async function countRecentPrewarms(admin: SB, windowMs: number): Promise<
 export async function updateSettings(sb: SB, profileId: string, fields: { slack_webhook_url?: string | null; contact_criteria?: unknown }) {
   const { error } = await sb.from("seller_profiles").update(fields).eq("id", profileId);
   if (error) throw new Error(error.message);
+}
+
+// ---------------- opportunity detail ----------------
+/** One opportunity with its company, situation, and evidence. RLS-scoped via `sb`. */
+export async function getOpportunityDetail(sb: SB, opportunityId: string, sellerProfileId: string) {
+  const { data } = await sb
+    .from("opportunities")
+    .select(
+      "*, companies(id, normalized_domain, name), buying_situations(name), evidence(source_url, source_date, citation, reasoning)",
+    )
+    .eq("id", opportunityId)
+    .eq("seller_profile_id", sellerProfileId)
+    .maybeSingle();
+  return data;
+}
+
+/** Contacts for a company under a seller, prioritized P1→P3. RLS-scoped via `sb`. */
+export async function getContactsForCompany(sb: SB, sellerProfileId: string, companyId: string) {
+  const { data } = await sb
+    .from("contacts")
+    .select("id, full_name, title, linkedin_url, priority, email, email_status")
+    .eq("seller_profile_id", sellerProfileId)
+    .eq("company_id", companyId)
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+// ---------------- outreach drafts ----------------
+export interface OutreachDraftRow {
+  channel: "email" | "linkedin";
+  subject: string | null;
+  body: string;
+  followups: unknown;
+  model: string | null;
+  updated_at: string;
+}
+
+export async function getOutreachDrafts(sb: SB, opportunityId: string, contactId?: string | null) {
+  let q = sb.from("outreach_drafts").select("*").eq("opportunity_id", opportunityId);
+  if (contactId) q = q.eq("contact_id", contactId);
+  const { data } = await q;
+  return (data ?? []) as any[];
+}
+
+/** Upsert the email + linkedin draft rows for one opportunity+contact. RLS-scoped via `sb`. */
+export async function saveOutreachDrafts(
+  sb: SB,
+  args: {
+    sellerProfileId: string;
+    opportunityId: string;
+    contactId: string | null;
+    model: string;
+    email?: { subject: string; body: string };
+    linkedin?: { body: string };
+    followups?: unknown;
+  },
+) {
+  const now = new Date().toISOString();
+  const rows: Record<string, unknown>[] = [];
+  if (args.email) {
+    rows.push({
+      seller_profile_id: args.sellerProfileId,
+      opportunity_id: args.opportunityId,
+      contact_id: args.contactId,
+      channel: "email",
+      subject: args.email.subject,
+      body: args.email.body,
+      followups: args.followups ?? null,
+      model: args.model,
+      updated_at: now,
+    });
+  }
+  if (args.linkedin) {
+    rows.push({
+      seller_profile_id: args.sellerProfileId,
+      opportunity_id: args.opportunityId,
+      contact_id: args.contactId,
+      channel: "linkedin",
+      subject: null,
+      body: args.linkedin.body,
+      followups: null,
+      model: args.model,
+      updated_at: now,
+    });
+  }
+  if (!rows.length) return;
+  const { error } = await sb.from("outreach_drafts").upsert(rows, { onConflict: "opportunity_id,contact_id,channel" });
+  if (error) throw new Error(error.message);
+}
+
+// ---------------- usage counters (per-user daily spend cap) ----------------
+export async function getTodayUsage(admin: SB, userId: string): Promise<{ runs: number; cost: number }> {
+  const { data } = await admin
+    .from("usage_counters")
+    .select("runs_count, cost")
+    .eq("user_id", userId)
+    .eq("day", new Date().toISOString().slice(0, 10))
+    .maybeSingle();
+  return { runs: data?.runs_count ?? 0, cost: Number(data?.cost ?? 0) };
+}
+
+/** Increment today's run count + estimated cost for a user (atomic upsert). */
+export async function addUsage(admin: SB, userId: string, costDelta: number, runsDelta = 1) {
+  const day = new Date().toISOString().slice(0, 10);
+  const cur = await getTodayUsage(admin, userId);
+  const { error } = await admin
+    .from("usage_counters")
+    .upsert(
+      { user_id: userId, day, runs_count: cur.runs + runsDelta, cost: cur.cost + costDelta },
+      { onConflict: "user_id,day" },
+    );
+  if (error) throw new Error(error.message);
+}
+
+// ---------------- cron helpers ----------------
+/** Runs stuck in `running` past `minutes` - treated as orphaned (webhook missed + tab closed). */
+export async function getStuckRuns(admin: SB, minutes: number) {
+  const cutoff = new Date(Date.now() - minutes * 60_000).toISOString();
+  const { data } = await admin
+    .from("discovery_runs")
+    .select("*")
+    .eq("status", "running")
+    .lt("requested_at", cutoff);
+  return data ?? [];
+}
+
+/** All seller profiles (owner user_id included) for the scheduled daily sweep. */
+export async function getAllSellerProfiles(admin: SB) {
+  const { data } = await admin.from("seller_profiles").select("id, user_id, domain");
+  return data ?? [];
 }
