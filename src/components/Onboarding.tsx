@@ -151,8 +151,14 @@ export default function Onboarding() {
         {error && <div className="card p-4 mb-5 text-sm" style={{ color: "var(--accent)" }}>{error}</div>}
 
         {busy && busyMsg && (
-          <div className="card p-6 mb-5 flex items-center gap-3">
-            <Spinner /><span className="text-sm dot">{busyMsg}</span>
+          <div className="card p-6 mb-5 flex items-start gap-3">
+            <Spinner />
+            <div>
+              <p className="text-sm font-medium dot">{busyMsg}</p>
+              <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>
+                {step === "domain" ? "Researching the web — usually 30–60 seconds." : "Reasoning over your business — usually 1–2 minutes. You can keep this tab open."}
+              </p>
+            </div>
           </div>
         )}
 

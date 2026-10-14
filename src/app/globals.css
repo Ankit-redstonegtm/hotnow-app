@@ -1,21 +1,35 @@
 @import "tailwindcss";
 
+/* ---- HotNow design system — Prospeo-inspired: clean warm-white, vivid red,
+   rounded, data-dense. Light only for v2. ---- */
 :root {
-  --bg: #fbfaf9;
+  --bg: #faf8f6;
   --surface: #ffffff;
-  --border: #ece8e3;
-  --fg: #1a1715;
-  --muted: #6b645d;
-  --faint: #978f87;
-  --accent: #d6451f;
-  --accent-soft: #fbeae3;
-  --good: #1f9d6b;
-  --radius: 14px;
+  --surface-2: #f6f4f2;
+  --border: #ebe8e5;
+  --border-strong: #ddd8d3;
+  --fg: #18171a;
+  --muted: #6b6771;
+  --faint: #9b96a0;
+  --accent: #f0333b;
+  --accent-ink: #cf1f27;
+  --accent-soft: #fdecec;
+  --good: #16a06a;
+  --good-soft: #e6f6ee;
+  --warn: #c98a12;
+  --info: #2f6df0;
+  --p1: #f0333b;
+  --p2: #2f6df0;
+  --p3: #6b6771;
+  --radius: 12px;
+  --radius-sm: 9px;
+  --sidebar: 236px;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-border: var(--border);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
@@ -33,50 +47,70 @@ body {
   color: var(--fg);
   font-family: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
 }
 
 @layer components {
+  /* buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-2 text-sm font-semibold transition-all;
+    white-space: nowrap;
   }
-  .btn-primary {
-    background: var(--accent);
-    color: #fff;
-  }
-  .btn-primary:hover { filter: brightness(0.95); }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(240,51,59,.25); }
+  .btn-primary:hover { background: var(--accent-ink); }
   .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-  .btn-ghost {
-    background: transparent;
-    color: var(--fg);
-    border: 1px solid var(--border);
-  }
-  .btn-ghost:hover { background: #f4f1ee; }
+  .btn-ghost { background: var(--surface); color: var(--fg); border: 1px solid var(--border-strong); }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
 
+  /* surfaces */
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 1px 2px rgba(26,23,21,.03), 0 8px 24px rgba(26,23,21,.03);
+    box-shadow: 0 1px 2px rgba(24,23,26,.03);
   }
+
+  /* inputs */
   .input {
-    @apply w-full rounded-xl px-4 py-3 text-sm outline-none;
+    @apply w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     color: var(--fg);
   }
   .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .label { @apply block text-xs font-medium mb-1.5; color: var(--muted); }
-  .chip {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
-    background: var(--accent-soft); color: var(--accent);
+  .label { @apply block text-xs font-semibold mb-1.5; color: var(--muted); }
+
+  /* badges / pills */
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold; background: var(--accent-soft); color: var(--accent-ink); }
+  .pill { @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .pill-p1 { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+  .pill-p2 { background: #e8f0fe; color: #1b4fd0; border-color: transparent; }
+  .pill-p3 { background: var(--surface-2); color: var(--muted); }
+
+  /* data table */
+  .tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .tbl th {
+    text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--faint); padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap;
   }
-  .pill {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium;
-    background: #f1ede9; color: var(--muted);
+  .tbl td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tbody tr:hover { background: var(--surface-2); }
+
+  /* sidebar nav */
+  .nav-item {
+    @apply flex items-center gap-2.5 rounded-[10px] px-3 py-2 text-sm font-medium transition-colors;
+    color: var(--muted);
   }
+  .nav-item:hover { background: var(--surface-2); color: var(--fg); }
+  .nav-item[data-active="true"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 }
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse-dot { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
 .dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.skeleton { position: relative; overflow: hidden; background: var(--surface-2); }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent); animation: shimmer 1.4s infinite; }

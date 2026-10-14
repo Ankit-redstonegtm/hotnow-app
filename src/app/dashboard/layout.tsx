@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSellerProfileByUser } from "@/lib/db/repo";
-import SituationsManager from "@/components/SituationsManager";
+import AppShell from "@/components/AppShell";
 
-export default async function SituationsPage() {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) redirect("/login?next=/dashboard/situations");
+  if (!user) redirect("/login?next=/dashboard");
   const profile = await getSellerProfileByUser(sb, user.id);
   if (!profile) redirect("/onboarding");
-  return <SituationsManager />;
+  return (
+    <AppShell companyName={profile.company_name ?? profile.domain} userEmail={user.email ?? ""}>
+      {children}
+    </AppShell>
+  );
 }

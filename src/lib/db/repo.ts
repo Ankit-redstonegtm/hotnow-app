@@ -285,3 +285,107 @@ function safeDate(d: string): string | null {
   const t = Date.parse(d);
   return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
 }
+
+// ---------------- contacts (Blitz decision-makers) ----------------
+/** Companies (from opportunities) that still need contact sourcing. */
+export async function companiesNeedingContacts(sb: SB, sellerProfileId: string, limit: number) {
+  const { data } = await sb
+    .from("opportunities")
+    .select("id, company_id, companies!inner(normalized_domain, name, contacts_sourced_at)")
+    .eq("seller_profile_id", sellerProfileId)
+    .is("companies.contacts_sourced_at", null)
+    .limit(limit);
+  const seen = new Set<string>();
+  const out: Array<{ companyId: string; domain: string; name: string; opportunityId: string }> = [];
+  for (const r of data ?? []) {
+    const c = (r as any).companies;
+    if (!c?.normalized_domain || seen.has(r.company_id)) continue;
+    seen.add(r.company_id);
+    out.push({ companyId: r.company_id, domain: c.normalized_domain, name: c.name, opportunityId: r.id });
+  }
+  return out;
+}
+
+export async function countCompaniesNeedingContacts(sb: SB, sellerProfileId: string): Promise<number> {
+  const { data } = await sb
+    .from("opportunities")
+    .select("company_id, companies!inner(contacts_sourced_at)")
+    .eq("seller_profile_id", sellerProfileId)
+    .is("companies.contacts_sourced_at", null);
+  return new Set((data ?? []).map((r: any) => r.company_id)).size;
+}
+
+export async function saveContacts(
+  admin: SB,
+  args: { sellerProfileId: string; companyId: string; opportunityId: string | null; contacts: Array<{ fullName: string; title: string; linkedinUrl: string; jobLevel?: string; jobFunction?: string; priority: string }> },
+): Promise<number> {
+  if (args.contacts.length) {
+    const rows = args.contacts.map((c) => ({
+      seller_profile_id: args.sellerProfileId,
+      company_id: args.companyId,
+      opportunity_id: args.opportunityId,
+      full_name: c.fullName,
+      title: c.title,
+      linkedin_url: c.linkedinUrl,
+      job_level: c.jobLevel ?? null,
+      job_function: c.jobFunction ?? null,
+      priority: c.priority,
+      source: "blitz",
+    }));
+    await admin.from("contacts").upsert(rows, { onConflict: "seller_profile_id,company_id,linkedin_url", ignoreDuplicates: true });
+  }
+  await admin.from("companies").update({ contacts_sourced_at: new Date().toISOString() }).eq("id", args.companyId);
+  return args.contacts.length;
+}
+
+export async function getContacts(sb: SB, sellerProfileId: string) {
+  const { data } = await sb
+    .from("contacts")
+    .select("*, companies(normalized_domain, name)")
+    .eq("seller_profile_id", sellerProfileId)
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+// ---------------- lists ----------------
+export async function createList(sb: SB, sellerProfileId: string, name: string, kind: "companies" | "contacts") {
+  const { data, error } = await sb.from("lists").insert({ seller_profile_id: sellerProfileId, name, kind }).select("*").single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function getLists(sb: SB, sellerProfileId: string) {
+  const { data } = await sb
+    .from("lists")
+    .select("*, list_items(count)")
+    .eq("seller_profile_id", sellerProfileId)
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+export async function addToList(sb: SB, listId: string, items: { opportunityIds?: string[]; contactIds?: string[] }) {
+  const rows = [
+    ...(items.opportunityIds ?? []).map((id) => ({ list_id: listId, opportunity_id: id })),
+    ...(items.contactIds ?? []).map((id) => ({ list_id: listId, contact_id: id })),
+  ];
+  if (!rows.length) return 0;
+  const { error } = await sb.from("list_items").insert(rows);
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+
+export async function getListWithItems(sb: SB, listId: string) {
+  const { data: list } = await sb.from("lists").select("*").eq("id", listId).single();
+  const { data: items } = await sb
+    .from("list_items")
+    .select("*, opportunities(id, what_happened, why_it_matters, companies(normalized_domain, name), buying_situations(name)), contacts(full_name, title, linkedin_url, priority, companies(normalized_domain, name))")
+    .eq("list_id", listId);
+  return { list, items: items ?? [] };
+}
+
+// ---------------- settings / criteria ----------------
+export async function updateSettings(sb: SB, profileId: string, fields: { slack_webhook_url?: string | null; contact_criteria?: unknown }) {
+  const { error } = await sb.from("seller_profiles").update(fields).eq("id", profileId);
+  if (error) throw new Error(error.message);
+}
