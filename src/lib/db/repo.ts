@@ -60,6 +60,11 @@ export async function getSellerProfileByUser(sb: SB, userId: string) {
   return data;
 }
 
+export async function getSellerProfileById(sb: SB, id: string) {
+  const { data } = await sb.from("seller_profiles").select("*").eq("id", id).maybeSingle();
+  return data;
+}
+
 export async function updateSellerProfile(sb: SB, id: string, fields: Record<string, unknown>) {
   const { error } = await sb
     .from("seller_profiles")
@@ -189,6 +194,21 @@ export async function getRuns(sb: SB, sellerProfileId: string, statuses?: string
   if (statuses?.length) q = q.in("status", statuses);
   const { data } = await q.order("requested_at", { ascending: false });
   return data ?? [];
+}
+
+export async function getRunById(sb: SB, id: string) {
+  const { data } = await sb.from("discovery_runs").select("*").eq("id", id).maybeSingle();
+  return data;
+}
+
+/** Look up a run by the provider's job id (FindAll `findall_id`). Used by the webhook. */
+export async function getRunByProviderJobId(sb: SB, providerJobId: string) {
+  const { data } = await sb
+    .from("discovery_runs")
+    .select("*")
+    .eq("provider_job_id", providerJobId)
+    .maybeSingle();
+  return data;
 }
 
 export async function updateRun(sb: SB, id: string, fields: Record<string, unknown>) {

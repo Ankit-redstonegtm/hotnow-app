@@ -3,6 +3,7 @@ import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { launchDiscovery, estimateFindAllCost, LIMITS } from "@/lib/engine";
 import type { BuyingSituation, Generator, IcpConstraints } from "@/lib/engine";
 import { getSellerProfileByUser, getSituations, getIcp, createRun, getRuns } from "@/lib/db/repo";
+import { discoveryWebhookUrl } from "@/lib/discovery/worker";
 
 export const maxDuration = 120;
 
@@ -31,11 +32,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ launched: [], message: "Turn on at least one signal first." });
     }
 
+    // When set, Parallel will POST to this URL the moment each run finishes, so
+    // results ingest with no open browser tab. Undefined in local dev (unreachable).
+    const webhookUrl = discoveryWebhookUrl();
+
     const launched: Array<{ runId: string; situationId: string; name: string }> = [];
     for (const s of situations) {
       const situation = toSituation(s);
       const matchLimit = Math.min(icp.dailyTarget || LIMITS.defaultMatchLimit, LIMITS.maxMatchLimit);
-      const { runId: providerJobId } = await launchDiscovery(situation, icp, { matchLimit });
+      const { runId: providerJobId } = await launchDiscovery(situation, icp, { matchLimit, webhookUrl });
       const dbRunId = await createRun(sb, {
         sellerProfileId: profile.id,
         situationId: s.id,

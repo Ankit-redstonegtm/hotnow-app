@@ -137,7 +137,14 @@ export async function findAllCreate(opts: {
     generator: opts.generator,
     match_limit: opts.matchLimit,
   };
-  if (opts.webhookUrl) body.webhook = { url: opts.webhookUrl };
+  if (opts.webhookUrl) {
+    // event_types is REQUIRED by the FindAll webhook API. We subscribe to the
+    // terminal events only; per-candidate events would be far noisier.
+    body.webhook = {
+      url: opts.webhookUrl,
+      event_types: ["findall.run.completed", "findall.run.failed", "findall.run.cancelled"],
+    };
+  }
   const created = await call<any>("POST", "/v1beta/findall/runs", body);
   const runId =
     created.findall_id || created.id || created.run_id || created?.run?.findall_id;

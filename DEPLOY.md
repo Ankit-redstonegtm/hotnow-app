@@ -23,6 +23,15 @@ Set these for **Production** and **Preview** (values are in your local `app/.env
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the `sb_publishable_...` key |
 | `SUPABASE_SERVICE_ROLE_KEY` | the `sb_secret_...` key |
 | `HOTNOW_DB_SCHEMA` | `hotnow` |
+| `APP_URL` | `https://app.hotnow.co` (optional; falls back to `VERCEL_URL`) |
+| `PARALLEL_WEBHOOK_SECRET` | `whsec_...` from Parallel → Settings → Webhooks (optional) |
+
+**Background discovery (no open tab needed):** when a FindAll run finishes,
+Parallel POSTs `app.hotnow.co/api/discovery/webhook` and results ingest server-side,
+then a Slack ping (if a webhook URL is set in Settings) says how many new
+opportunities landed. This works out of the box on Vercel via `VERCEL_URL`; set
+`APP_URL` for a stable domain + nicer Slack links, and `PARALLEL_WEBHOOK_SECRET`
+to signature-verify incoming deliveries. The in-app poll still runs as a fallback.
 
 CLI (repeat per var, paste value when prompted):
 ```bash
