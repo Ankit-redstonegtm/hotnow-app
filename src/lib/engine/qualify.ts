@@ -46,12 +46,17 @@ export async function qualifyCandidates(
 
     const domain = opts?.resolveDomains === false ? c.url : await resolveDomain(c);
 
+    // Undated evidence can't be checked for recency, so it passes the freshness gate
+    // above - but we must not present it with full confidence. Cap it to "low" so the
+    // UI honestly reflects that the timing is unverified (without dropping the lead).
+    const confidence = evidenceDate ? confidenceOf(c) : "low";
+
     qualified.push({
       company: { name: c.name, domain },
       situationName: situation.name,
       whatHappened: whatHappened(c, situation),
       whyItMatters: situation.demandHypothesis,
-      confidence: confidenceOf(c),
+      confidence,
       evidence: citations,
       evidenceDate: evidenceDate ?? undefined,
       discoveredAt: new Date().toISOString(),

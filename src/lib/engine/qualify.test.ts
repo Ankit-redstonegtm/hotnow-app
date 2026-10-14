@@ -64,6 +64,16 @@ describe("qualifyCandidates", () => {
     expect(rejected[0].reason).toMatch(/stale/);
   });
 
+  it("keeps undated evidence but caps its confidence to 'low' (recency unverifiable)", async () => {
+    const c = candidate({
+      basis: [{ field: "x", reasoning: "Expanded overseas.", confidence: "high", citations: [{ url: "https://news/undated" }] }],
+    });
+    const { qualified } = await qualifyCandidates([c], situation, opts);
+    expect(qualified).toHaveLength(1);
+    expect(qualified[0].confidence).toBe("low"); // not 'high' - the date is unknown
+    expect(qualified[0].evidenceDate).toBeUndefined();
+  });
+
   it("rejects a candidate with no company name", async () => {
     const c = candidate({ name: "", basis: [{ field: "x", reasoning: "y", citations: [{ url: "https://n" }] }] });
     const { qualified, rejected } = await qualifyCandidates([c], situation, opts);

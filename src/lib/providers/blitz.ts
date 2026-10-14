@@ -66,7 +66,11 @@ export async function employeeFinder(opts: {
   return { employees: list.map(mapEmployee).filter((e) => e.fullName || e.linkedinUrl), totalPages };
 }
 
-/** Find a verified work email for a person by their LinkedIn URL. */
+/**
+ * Find a work email for a person by their LinkedIn URL. Blitz returns `{found, email}`
+ * with NO verification signal, so a returned address is "found", not "verified" - callers
+ * must record it as email_status 'found', never 'verified'.
+ */
 export async function enrichEmail(personLinkedinUrl: string): Promise<string | null> {
   if (!personLinkedinUrl) return null;
   try {

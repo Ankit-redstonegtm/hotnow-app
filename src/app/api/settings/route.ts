@@ -27,7 +27,14 @@ export async function PUT(req: Request) {
     if (!p) return NextResponse.json({ error: "no profile" }, { status: 400 });
     const b = await req.json();
     const fields: Record<string, unknown> = {};
-    if ("slackWebhookUrl" in b) fields.slack_webhook_url = b.slackWebhookUrl || null;
+    if ("slackWebhookUrl" in b) {
+      const url = (b.slackWebhookUrl || "").trim();
+      // Only accept real Slack incoming-webhook URLs - prevents SSRF to arbitrary/internal hosts.
+      if (url && !/^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/.test(url)) {
+        return NextResponse.json({ error: "Enter a valid Slack incoming webhook URL (https://hooks.slack.com/services/...)." }, { status: 400 });
+      }
+      fields.slack_webhook_url = url || null;
+    }
     if ("contactCriteria" in b) fields.contact_criteria = b.contactCriteria ?? {};
     await updateSettings(sb, p.id, fields);
     return NextResponse.json({ ok: true });

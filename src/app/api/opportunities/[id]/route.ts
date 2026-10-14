@@ -23,7 +23,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const company = (row as any).companies;
     const companyId = company?.id as string | undefined;
     const contacts = companyId ? await getContactsForCompany(sb, profile.id, companyId) : [];
-    const draftRows = await getOutreachDrafts(sb, id);
+    const draftRows = await getOutreachDrafts(sb, id, null, profile.id);
 
     const evidence = ((row as any).evidence ?? []).map((e: any) => {
       const cite = e.citation ?? {};

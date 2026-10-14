@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     const contactId = url.searchParams.get("contactId");
     if (!opportunityId) return NextResponse.json({ error: "opportunityId required" }, { status: 400 });
 
-    const rows = await getOutreachDrafts(sb, opportunityId, contactId);
+    const rows = await getOutreachDrafts(sb, opportunityId, contactId, profile.id);
     if (!rows.length) return NextResponse.json({ content: null });
 
     const content: any = {};

@@ -124,9 +124,11 @@ const PRIORITY_LABEL: Record<Priority, string> = {
   P3: "P3 · Stakeholder",
 };
 
-/** Reuses the existing .pill / .pill-pN classes. */
-export function PriorityBadge({ priority }: { priority: Priority }) {
-  const cls =
-    priority === "P1" ? "pill-p1" : priority === "P2" ? "pill-p2" : "pill-p3";
+/** Reuses the existing .pill / .pill-pN classes. Defensive against null/unexpected values. */
+export function PriorityBadge({ priority }: { priority: Priority | string | null | undefined }) {
+  if (priority !== "P1" && priority !== "P2" && priority !== "P3") {
+    return <span className="pill">{priority || "—"}</span>;
+  }
+  const cls = priority === "P1" ? "pill-p1" : priority === "P2" ? "pill-p2" : "pill-p3";
   return <span className={`pill ${cls}`}>{PRIORITY_LABEL[priority]}</span>;
 }

@@ -51,12 +51,12 @@ export default function CompaniesPage() {
           await new Promise((r) => setTimeout(r, 900));
         }
       }
-      setPhase("emails"); setPhaseNote("Finding verified emails for your top people");
+      setPhase("emails"); setPhaseNote("Finding work emails for your top people");
       for (let i = 0; i < 60; i++) {
         const j = await fetch("/api/contacts/enrich", { method: "POST" }).then((r) => r.json());
         if (j.error) break;
         if (j.done || (j.remaining ?? 0) === 0) break;
-        setPhaseNote(`Finding verified emails · ${j.remaining} to go`);
+        setPhaseNote(`Finding emails · ${j.remaining} to go`);
         await new Promise((r) => setTimeout(r, 700));
       }
       setPhase("done"); setPhaseNote("Decision-makers and emails are ready on the Contacts tab");
@@ -134,12 +134,12 @@ export default function CompaniesPage() {
               : <span className="spin inline-block h-4 w-4 rounded-full border-2" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />}
             <span className="text-sm font-medium" style={phase === "done" ? { color: "var(--good)" } : undefined}>{phaseNote}</span>
           </div>
-          <div className="flex items-center gap-2 mt-3 text-xs">
+          <div className="flex items-center gap-2 mt-3 text-xs flex-wrap">
             <Stage on={true} label="Companies" />
             <Dash />
             <Stage on={phase === "contacts" || phase === "emails" || phase === "done"} label="Decision-makers" active={phase === "contacts"} />
             <Dash />
-            <Stage on={phase === "emails" || phase === "done"} label="Verified emails" active={phase === "emails"} />
+            <Stage on={phase === "emails" || phase === "done"} label="Emails" active={phase === "emails"} />
           </div>
         </div>
       )}
@@ -162,7 +162,15 @@ export default function CompaniesPage() {
             </thead>
             <tbody>
               {opps.map((o) => (
-                <tr key={o.id} className="cursor-pointer" onClick={() => router.push(`/dashboard/companies/${o.id}`)}>
+                <tr
+                  key={o.id}
+                  className="cursor-pointer focus-ring"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Open opportunity for ${o.companies?.name || o.companies?.normalized_domain || "company"}`}
+                  onClick={() => router.push(`/dashboard/companies/${o.id}`)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/dashboard/companies/${o.id}`); } }}
+                >
                   <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} className="accent-[var(--accent)]" aria-label="Select company" /></td>
                   <td>
                     <div className="font-medium flex items-center gap-2">{o.companies?.name || o.companies?.normalized_domain}{o.status === "new" && <span className="chip">New</span>}</div>

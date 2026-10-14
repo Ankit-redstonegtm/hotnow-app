@@ -52,7 +52,7 @@ export default function OpportunityCard({ opp }: { opp: OpportunityRow }) {
       tabIndex={0}
       onClick={go}
       onKeyDown={onKeyDown}
-      className="card p-4 cursor-pointer transition-all hover:-translate-y-0.5 focus:outline-none"
+      className="card p-4 cursor-pointer transition-all hover:-translate-y-0.5 focus-ring"
       style={{ boxShadow: "0 1px 2px rgba(24,23,26,.03)" }}
       aria-label={`Open opportunity for ${name}`}
     >

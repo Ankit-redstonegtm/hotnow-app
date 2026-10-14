@@ -42,7 +42,7 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, pending]);
 
-  // run the flow: find decision-makers, then verified emails.
+  // run the flow: find decision-makers, then work emails.
   async function run(allEmails: boolean) {
     if (working) return;
     setWorking(true);
@@ -58,13 +58,13 @@ export default function ContactsPage() {
           await new Promise((r) => setTimeout(r, 900));
         }
       }
-      setNote("Finding verified emails");
+      setNote("Finding work emails");
       for (let i = 0; i < 80; i++) {
         const j = await fetch("/api/contacts/enrich", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(allEmails ? { all: true } : {}) }).then((r) => r.json());
         if (j.error) { setNote(j.error); break; }
         await load();
         if (j.done || (j.remaining ?? 0) === 0) break;
-        setNote(`Finding verified emails · ${j.remaining} to go`);
+        setNote(`Finding emails · ${j.remaining} to go`);
         await new Promise((r) => setTimeout(r, 700));
       }
       setNote("Everyone is ready.");
@@ -96,7 +96,7 @@ export default function ContactsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>
           <p className="text-sm" style={{ color: "var(--muted)" }}>
-            Decision-makers at your companies, ranked by priority{withEmail > 0 ? ` · ${withEmail} with verified emails` : ""}.
+            Decision-makers at your companies, ranked by priority{withEmail > 0 ? ` · ${withEmail} with a work email` : ""}.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -142,10 +142,10 @@ export default function ContactsPage() {
                   <td><input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} className="accent-[var(--accent)]" /></td>
                   <td className="font-medium">{c.full_name}</td>
                   <td style={{ color: "var(--muted)", maxWidth: 280 }} className="truncate">{c.title}</td>
-                  <td><span className={`pill pill-${c.priority.toLowerCase()}`}>{c.priority}</span></td>
+                  <td>{c.priority ? <span className={`pill pill-${c.priority.toLowerCase()}`}>{c.priority}</span> : <span className="pill">—</span>}</td>
                   <td>
                     <div className="flex flex-col gap-1 items-start">
-                      <EmailStatusBadge status={emailStatusOf(c)} checking={working && !c.email} />
+                      <EmailStatusBadge status={emailStatusOf(c)} checking={working && emailStatusOf(c) === "unknown"} />
                       {c.email && <a href={`mailto:${c.email}`} className="text-xs underline" style={{ color: "var(--accent-ink)" }}>{c.email}</a>}
                     </div>
                   </td>

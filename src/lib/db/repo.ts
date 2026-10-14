@@ -588,8 +588,10 @@ export interface OutreachDraftRow {
   updated_at: string;
 }
 
-export async function getOutreachDrafts(sb: SB, opportunityId: string, contactId?: string | null) {
+export async function getOutreachDrafts(sb: SB, opportunityId: string, contactId?: string | null, sellerProfileId?: string) {
   let q = sb.from("outreach_drafts").select("*").eq("opportunity_id", opportunityId);
+  // Defense-in-depth: scope to the caller's profile in addition to RLS.
+  if (sellerProfileId) q = q.eq("seller_profile_id", sellerProfileId);
   if (contactId) q = q.eq("contact_id", contactId);
   const { data } = await q;
   return (data ?? []) as any[];
