@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import TopBar from "@/components/TopBar";
 
 type Step = "domain" | "studio";
+type StudioStep = "company" | "contacts" | "signals";
+type LoadState = "idle" | "loading" | "ready" | "error";
 type Profile = {
   company_name?: string; product_description?: string; target_customers?: string;
   problems_solved?: string; buyer_personas?: string[]; industries?: string[];
@@ -13,13 +15,6 @@ type Situation = {
   discovery_objective: string; match_conditions: { name: string; description: string }[];
   generator: string; enabled: boolean; source: string;
 };
-
-const RESEARCH_MSGS = [
-  "Reading your website",
-  "Learning what you sell",
-  "Mapping who buys from you",
-  "Finding the moments that create demand",
-];
 
 const SIZE_RANGES = [
   { label: "Any size", min: null as number | null, max: null as number | null },
@@ -32,13 +27,19 @@ const SIZE_RANGES = [
 const LEVELS = ["C-Team", "VP", "Director", "Manager"];
 const FUNCTIONS = ["Sales & Business Development", "Operations", "Advertising & Marketing", "General Business & Management"];
 
+const STUDIO_ORDER: StudioStep[] = ["company", "contacts", "signals"];
+
 export default function Onboarding() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("domain");
-  const [busy, setBusy] = useState(false);
-  const [busyMsg, setBusyMsg] = useState("");
+  const [studioStep, setStudioStep] = useState<StudioStep>("company");
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Background work states. The studio appears IMMEDIATELY; research + signals
+  // stream into their panels while the user fills company + contact criteria.
+  const [researchState, setResearchState] = useState<LoadState>("idle");
+  const [signalsState, setSignalsState] = useState<LoadState>("idle");
 
   const [domain, setDomain] = useState("");
   const [desc, setDesc] = useState("");
@@ -57,8 +58,9 @@ export default function Onboarding() {
   const [levels, setLevels] = useState<string[]>(["C-Team", "VP", "Director"]);
   const [functions, setFunctions] = useState<string[]>(["Sales & Business Development", "Operations"]);
 
-  // Resume: if the user already has a profile, open the studio directly instead of
-  // re-researching. Keeps the setup picking up where they left off.
+  // Resume: if the user already has a profile, open the studio directly with
+  // everything prefilled. Otherwise, if they arrived from the marketing CTA, their
+  // research is pre-warming - kick off the (non-blocking) flow automatically.
   useEffect(() => {
     (async () => {
       try {
@@ -68,15 +70,12 @@ export default function Onboarding() {
         ]);
         const p = sr.profile;
         if (!p) {
-          // No profile yet. If they arrived from the marketing CTA, their research
-          // is already pre-warming - prefill the domain and kick off the flow so the
-          // summary appears without any retyping.
           try {
             const pw = localStorage.getItem("hotnow_pw_domain");
             if (pw) {
               localStorage.removeItem("hotnow_pw_domain");
               setDomain(pw);
-              void startResearchFlow(pw);
+              beginSetup(pw);
             }
           } catch { /* no-op */ }
           return;
@@ -87,7 +86,7 @@ export default function Onboarding() {
           buyer_personas: p.buyer_personas, industries: p.industries,
         });
         setDomain(p.domain ?? "");
-        if (situ.situations?.length) setSituations(situ.situations);
+        setResearchState("ready");
         const [icp, settings] = await Promise.all([
           fetch("/api/icp").then((r) => r.json()).catch(() => ({})),
           fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
@@ -106,69 +105,86 @@ export default function Onboarding() {
         const cc = settings.settings?.contactCriteria;
         if (cc?.jobLevels?.length) setLevels(cc.jobLevels);
         if (cc?.jobFunctions?.length) setFunctions(cc.jobFunctions);
+
+        if (situ.situations?.length) { setSituations(situ.situations); setSignalsState("ready"); }
+        else { void generateSignals(); }
         setStep("studio");
       } catch { /* stay on domain step */ }
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function cycleMsgs(msgs: string[]) {
-    let i = 0;
-    setBusyMsg(msgs[0]);
-    const t = setInterval(() => { i = (i + 1) % msgs.length; setBusyMsg(msgs[i]); }, 2600);
-    return () => clearInterval(t);
-  }
-
-  async function research(e: React.FormEvent) {
+  function submitDomain(e: React.FormEvent) {
     e.preventDefault();
-    await startResearchFlow();
+    const d = domain.trim();
+    if (!d) return;
+    beginSetup(d);
   }
 
-  async function startResearchFlow(domainArg?: string) {
-    const d = (domainArg ?? domain).trim();
+  // Non-blocking: jump straight into the studio and run research (then signals) in
+  // the background. The user starts on Company criteria right away - no waiting.
+  function beginSetup(domainArg: string) {
+    const d = domainArg.trim();
     if (!d) return;
-    setBusy(true); setError(null);
-    const stop = cycleMsgs(RESEARCH_MSGS);
-    try {
-      const res = await fetch("/api/seller/research", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ domain: d, description: desc || undefined }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "We could not research that domain. Please check it and try again.");
+    setError(null);
+    setStep("studio");
+    setStudioStep("company");
+    setResearchState("loading");
+    setSignalsState("idle");
 
-      const p = await pollUntilDone("/api/seller/research/status", 90);
-      const pr = p.profile;
-      setProfile(pr ? {
-        company_name: pr.companyName, product_description: pr.productDescription,
-        target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
-        buyer_personas: pr.buyerPersonas, industries: pr.industries,
-      } : null);
-      if (pr?.industries?.length) setIndustries(pr.industries.join(", "));
+    (async () => {
+      try {
+        const res = await fetch("/api/seller/research", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ domain: d, description: desc || undefined }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || "We could not research that domain. Please check it and try again.");
 
-      await fetch("/api/seller", {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify(pr ? {
+        const p = await pollUntilDone("/api/seller/research/status", 90);
+        const pr = p.profile;
+        setProfile(pr ? {
           company_name: pr.companyName, product_description: pr.productDescription,
           target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
-        } : {}),
-      });
+          buyer_personas: pr.buyerPersonas, industries: pr.industries,
+        } : null);
+        if (pr?.industries?.length) setIndustries((cur) => cur || pr.industries.join(", "));
 
-      stop(); // research done; hand the loader message over to the signals phase
-      await loadOrGenerateSituations();
-      setStep("studio");
-    } catch (err) { setError(msg(err)); } finally { stop(); setBusy(false); setBusyMsg(""); }
+        await fetch("/api/seller", {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify(pr ? {
+            company_name: pr.companyName, product_description: pr.productDescription,
+            target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
+          } : {}),
+        });
+        setResearchState("ready");
+
+        // Chain signals right after research - still in the background, so by the
+        // time the user reaches step 3 they're usually already here.
+        await generateSignals();
+      } catch (err) {
+        setResearchState("error");
+        setSignalsState("error");
+        setError(msg(err));
+      }
+    })();
   }
 
-  async function loadOrGenerateSituations() {
-    const existing = await fetch("/api/situations").then((r) => r.json());
-    if (existing.situations?.length) { setSituations(existing.situations); return; }
-    setBusyMsg("Finding the moments that create demand");
-    const res = await fetch("/api/situations", { method: "POST" });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "We could not map your buying signals. Please try again.");
-    if (j.status === "done" && j.situations) { setSituations(j.situations); return; }
-    const done = await pollUntilDone("/api/situations/status", 90);
-    setSituations(done.situations ?? []);
+  async function generateSignals() {
+    setSignalsState("loading");
+    try {
+      const existing = await fetch("/api/situations").then((r) => r.json());
+      if (existing.situations?.length) { setSituations(existing.situations); setSignalsState("ready"); return; }
+      const res = await fetch("/api/situations", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "We could not map your buying signals. Please try again.");
+      if (j.status === "done" && j.situations) { setSituations(j.situations); setSignalsState("ready"); return; }
+      const done = await pollUntilDone("/api/situations/status", 90);
+      setSituations(done.situations ?? []);
+      setSignalsState("ready");
+    } catch (err) {
+      setSignalsState("error");
+      setError(msg(err));
+    }
   }
 
   async function pollUntilDone(url: string, maxTries: number): Promise<any> {
@@ -240,103 +256,94 @@ export default function Onboarding() {
   }
 
   const enabledCount = situations.filter((s) => s.enabled).length;
+  const size = SIZE_RANGES[sizeIdx];
+  const stepIdx = STUDIO_ORDER.indexOf(studioStep);
+  const goNext = () => setStudioStep(STUDIO_ORDER[Math.min(stepIdx + 1, STUDIO_ORDER.length - 1)]);
+  const goBack = () => setStudioStep(STUDIO_ORDER[Math.max(stepIdx - 1, 0)]);
 
-  // ---- domain + loading screen ----
+  // ---- domain entry ----
   if (step === "domain") {
     return (
       <div className="min-h-dvh flex flex-col hero-wrap">
         <TopBar />
         <div className="flex-1 flex items-center justify-center px-5 py-10">
           <div className="w-full max-w-xl">
-            {busy ? (
-              <ResearchLoader msg={busyMsg} />
-            ) : (
-              <div className="text-center">
-                <span className="chip mb-5">Set up in under a minute</span>
-                <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
-                  Find companies ready to buy, right now.
-                </h1>
-                <p className="mt-3 text-base" style={{ color: "var(--muted)" }}>
-                  Tell us your website. We study your business and build your targeting for you.
-                </p>
-                {error && <div className="card p-3 mt-5 text-sm text-left" style={{ color: "var(--accent)" }}>{error}</div>}
-                <form onSubmit={research} className="card p-2 mt-7 flex flex-col sm:flex-row items-stretch gap-2 text-left">
-                  <input className="input border-0 shadow-none text-base flex-1" style={{ background: "transparent" }}
-                    placeholder="yourcompany.com" value={domain} onChange={(e) => setDomain(e.target.value)} required autoFocus />
-                  <button className="btn btn-primary px-5 py-3 text-base" disabled={!domain}>Build my targeting</button>
-                </form>
-                <div className="mt-3">
-                  <input className="input text-sm" placeholder="Optional: one line on what you sell"
-                    value={desc} onChange={(e) => setDesc(e.target.value)} />
-                </div>
+            <div className="text-center">
+              <span className="chip mb-5">Set up in under a minute</span>
+              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
+                Find companies ready to buy, right now.
+              </h1>
+              <p className="mt-3 text-base" style={{ color: "var(--muted)" }}>
+                Tell us your website. We study your business and build your targeting while you set your filters.
+              </p>
+              {error && <div className="card p-3 mt-5 text-sm text-left" style={{ color: "var(--accent)" }}>{error}</div>}
+              <form onSubmit={submitDomain} className="card p-2 mt-7 flex flex-col sm:flex-row items-stretch gap-2 text-left">
+                <input className="input border-0 shadow-none text-base flex-1" style={{ background: "transparent" }}
+                  placeholder="yourcompany.com" value={domain} onChange={(e) => setDomain(e.target.value)} required autoFocus />
+                <button className="btn btn-primary px-5 py-3 text-base" disabled={!domain}>Start set-up</button>
+              </form>
+              <div className="mt-3">
+                <input className="input text-sm" placeholder="Optional: one line on what you sell"
+                  value={desc} onChange={(e) => setDesc(e.target.value)} />
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // ---- studio: the three connected panels ----
-  const size = SIZE_RANGES[sizeIdx];
+  // ---- studio: a 3-step journey. Research + signals load in the background. ----
   return (
     <div className="min-h-dvh flex flex-col hero-wrap">
       <TopBar />
-      <div className="mx-auto w-full max-w-6xl px-5 py-8 flex-1 pb-28">
+      <div className="mx-auto w-full max-w-3xl px-5 py-8 flex-1 pb-28">
         {/* header */}
-        <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-grid place-items-center h-8 w-8 rounded-lg text-white font-bold" style={{ background: "var(--accent)" }}>
+            {(profile?.company_name || domain).slice(0, 1).toUpperCase()}
+          </span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="inline-grid place-items-center h-8 w-8 rounded-lg text-white font-bold" style={{ background: "var(--accent)" }}>
-                {(profile?.company_name || domain).slice(0, 1).toUpperCase()}
-              </span>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight leading-none">{profile?.company_name || domain}</h1>
-                <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>We studied your business. Review your targeting below.</p>
-              </div>
-            </div>
-            {profile?.product_description && !editSummary && (
-              <p className="text-sm mt-3 max-w-2xl" style={{ color: "var(--muted)" }}>
-                {profile.product_description}{" "}
-                <button className="font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setEditSummary(true)}>Edit</button>
-              </p>
-            )}
+            <h1 className="text-xl font-semibold tracking-tight leading-none truncate">{profile?.company_name || domain}</h1>
+            <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>
+              {researchState === "loading" ? "Studying your website in the background…" : "We studied your business. Set your targeting below."}
+            </p>
           </div>
         </div>
 
-        {editSummary && profile && (
-          <div className="card p-5 mt-4 space-y-3">
-            <Field label="What you sell" value={profile.product_description ?? ""} textarea onChange={(v) => setProfile({ ...profile, product_description: v })} />
-            <Field label="Who buys" value={profile.target_customers ?? ""} textarea onChange={(v) => setProfile({ ...profile, target_customers: v })} />
-            <Field label="Problems you solve" value={profile.problems_solved ?? ""} textarea onChange={(v) => setProfile({ ...profile, problems_solved: v })} />
-            <div><button className="btn btn-ghost btn-sm" onClick={() => setEditSummary(false)}>Done</button></div>
+        {/* stepper */}
+        <div className="card p-3 mt-5">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            <StepPill n={1} label="Companies" active={studioStep === "company"} done={stepIdx > 0} onClick={() => setStudioStep("company")} />
+            <StepArrow />
+            <StepPill n={2} label="Contacts" active={studioStep === "contacts"} done={stepIdx > 1} onClick={() => setStudioStep("contacts")} />
+            <StepArrow />
+            <StepPill n={3} label="Signals" active={studioStep === "signals"} done={false}
+              hint={signalsState === "loading" ? "preparing…" : signalsState === "ready" ? `${enabledCount} on` : undefined}
+              onClick={() => setStudioStep("signals")} />
           </div>
-        )}
-
-        {/* pipeline preview: the dots connect here */}
-        <div className="card p-4 mt-6 overflow-x-auto">
-          <div className="pipe">
-            <PipeNode color="var(--accent)">Target companies</PipeNode>
-            <PipeSep />
-            <PipeNode color="var(--accent)">Catch the buying moment</PipeNode>
-            <PipeSep />
-            <PipeNode color="var(--info)">Reach the decision-makers</PipeNode>
-            <PipeSep />
-            <PipeNode color="var(--good)">Get verified emails</PipeNode>
-          </div>
-          <p className="text-xs mt-2.5" style={{ color: "var(--faint)" }}>
-            The three settings below drive this. Companies come first, then we find who to contact and their emails automatically.
-          </p>
         </div>
 
         {error && <div className="card p-3 mt-5 text-sm" style={{ color: "var(--accent)" }}>{error}</div>}
 
-        {/* three panels */}
-        <div className="mt-6 flex flex-col lg:flex-row items-stretch gap-0">
-          {/* 1. Company criteria */}
-          <div className="relative flex-1 min-w-0 lg:mt-3">
-            <span className="step-badge">1 · Companies</span>
-            <div className="panel h-full">
+        {/* ---------- STEP 1: COMPANY ---------- */}
+        {studioStep === "company" && (
+          <div className="mt-6">
+            {profile?.product_description && !editSummary && (
+              <p className="text-sm mb-4 max-w-2xl" style={{ color: "var(--muted)" }}>
+                {profile.product_description}{" "}
+                <button className="font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setEditSummary(true)}>Edit</button>
+              </p>
+            )}
+            {editSummary && profile && (
+              <div className="card p-5 mb-4 space-y-3">
+                <Field label="What you sell" value={profile.product_description ?? ""} textarea onChange={(v) => setProfile({ ...profile, product_description: v })} />
+                <Field label="Who buys" value={profile.target_customers ?? ""} textarea onChange={(v) => setProfile({ ...profile, target_customers: v })} />
+                <Field label="Problems you solve" value={profile.problems_solved ?? ""} textarea onChange={(v) => setProfile({ ...profile, problems_solved: v })} />
+                <div><button className="btn btn-ghost btn-sm" onClick={() => setEditSummary(false)}>Done</button></div>
+              </div>
+            )}
+            <div className="panel">
               <div className="panel-head">
                 <span className="panel-ico" style={{ background: "var(--accent-soft)", color: "var(--accent-ink)" }}><Ico name="building" /></span>
                 <div><p className="font-semibold text-sm">Company criteria</p><p className="text-xs" style={{ color: "var(--faint)" }}>Who you want to sell to</p></div>
@@ -355,7 +362,7 @@ export default function Onboarding() {
                   </div>
                 </div>
                 <div>
-                  <label className="label">Industries to focus on</label>
+                  <label className="label">Industries to focus on {researchState === "loading" && <span style={{ color: "var(--faint)" }}>· filling from your site…</span>}</label>
                   <input className="input" value={industries} onChange={(e) => setIndustries(e.target.value)} placeholder="Roofing, Solar, Home services" />
                 </div>
                 <div>
@@ -365,36 +372,12 @@ export default function Onboarding() {
               </div>
             </div>
           </div>
+        )}
 
-          <Flow />
-
-          {/* 2. Pain-Qualified Signals */}
-          <div className="relative flex-1 min-w-0 lg:mt-3">
-            <span className="step-badge">2 · Signals</span>
-            <div className="panel h-full">
-              <div className="panel-head">
-                <span className="panel-ico" style={{ background: "var(--accent-soft)", color: "var(--accent-ink)" }}><Ico name="signal" /></span>
-                <div><p className="font-semibold text-sm">Pain-Qualified Signals</p><p className="text-xs" style={{ color: "var(--faint)" }}>The moments that create demand</p></div>
-              </div>
-              <div className="panel-body">
-                {situations.length === 0 ? (
-                  <p className="text-sm" style={{ color: "var(--muted)" }}>No signals yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {situations.map((s) => <SignalRow key={s.id} s={s} onToggle={() => patchSituation(s.id, { enabled: !s.enabled })} onEdit={(f) => patchSituation(s.id, f)} />)}
-                  </div>
-                )}
-                <AddSignal onAdd={addCustomSituation} />
-              </div>
-            </div>
-          </div>
-
-          <Flow />
-
-          {/* 3. Contact criteria */}
-          <div className="relative flex-1 min-w-0 lg:mt-3">
-            <span className="step-badge">3 · Contacts</span>
-            <div className="panel h-full">
+        {/* ---------- STEP 2: CONTACTS ---------- */}
+        {studioStep === "contacts" && (
+          <div className="mt-6">
+            <div className="panel">
               <div className="panel-head">
                 <span className="panel-ico" style={{ background: "#e8f0fe", color: "#1b4fd0" }}><Ico name="users" /></span>
                 <div><p className="font-semibold text-sm">Contact criteria</p><p className="text-xs" style={{ color: "var(--faint)" }}>Who we reach inside each company</p></div>
@@ -420,18 +403,60 @@ export default function Onboarding() {
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ---------- STEP 3: SIGNALS ---------- */}
+        {studioStep === "signals" && (
+          <div className="mt-6">
+            <div className="panel">
+              <div className="panel-head">
+                <span className="panel-ico" style={{ background: "var(--accent-soft)", color: "var(--accent-ink)" }}><Ico name="signal" /></span>
+                <div><p className="font-semibold text-sm">Pain-Qualified Signals</p><p className="text-xs" style={{ color: "var(--faint)" }}>The moments that create demand for you</p></div>
+              </div>
+              <div className="panel-body">
+                {signalsState === "loading" || (signalsState === "idle" && situations.length === 0) ? (
+                  <div className="text-center py-6">
+                    <span className="spin inline-block h-6 w-6 rounded-full border-[3px]" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
+                    <p className="mt-3 text-sm font-medium dot">Finding the moments that create demand</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>We build these from everything we just learned about your business.</p>
+                  </div>
+                ) : situations.length === 0 ? (
+                  <p className="text-sm" style={{ color: "var(--muted)" }}>No signals yet. Add your own below.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {situations.map((s) => <SignalRow key={s.id} s={s} onToggle={() => patchSituation(s.id, { enabled: !s.enabled })} onEdit={(f) => patchSituation(s.id, f)} />)}
+                  </div>
+                )}
+                <AddSignal onAdd={addCustomSituation} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* sticky launch bar */}
+      {/* sticky footer nav */}
       <div className="fixed bottom-0 inset-x-0 z-20 border-t backdrop-blur" style={{ borderColor: "var(--border)", background: "rgba(250,248,246,.86)" }}>
-        <div className="mx-auto max-w-6xl px-5 py-3 flex items-center justify-between gap-4">
-          <p className="text-sm hidden sm:block" style={{ color: "var(--muted)" }}>
-            <b style={{ color: "var(--fg)" }}>{enabledCount}</b> signal{enabledCount === 1 ? "" : "s"} on · {size.label.toLowerCase()} · {geographies.split(",")[0] || "anywhere"}
-          </p>
-          <button className="btn btn-primary px-6 py-3 text-base w-full sm:w-auto" disabled={launching || enabledCount === 0} onClick={launch}>
-            {launching ? "Starting the search" : "Find opportunities"}
-          </button>
+        <div className="mx-auto max-w-3xl px-5 py-3 flex items-center justify-between gap-4">
+          {stepIdx > 0 ? (
+            <button className="btn btn-ghost" onClick={goBack}>← Back</button>
+          ) : (
+            <p className="text-sm hidden sm:block" style={{ color: "var(--muted)" }}>Step 1 of 3 · set who you want to reach</p>
+          )}
+
+          {studioStep !== "signals" ? (
+            <button className="btn btn-primary px-6 py-3 text-base" onClick={goNext}>
+              {studioStep === "company" ? "Next: who to contact →" : "Next: your signals →"}
+            </button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <p className="text-sm hidden sm:block" style={{ color: "var(--muted)" }}>
+                {signalsState === "loading" ? "Finishing your signals…" : <><b style={{ color: "var(--fg)" }}>{enabledCount}</b> signal{enabledCount === 1 ? "" : "s"} on · {size.label.toLowerCase()}</>}
+              </p>
+              <button className="btn btn-primary px-6 py-3 text-base" disabled={launching || signalsState === "loading" || enabledCount === 0} onClick={launch}>
+                {launching ? "Starting the search" : signalsState === "loading" ? "Preparing…" : "Find opportunities"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -440,52 +465,19 @@ export default function Onboarding() {
 
 /* ---------- small pieces ---------- */
 
-function ResearchLoader({ msg }: { msg: string }) {
+function StepPill({ n, label, active, done, hint, onClick }: { n: number; label: string; active: boolean; done: boolean; hint?: string; onClick: () => void }) {
   return (
-    <div className="card p-8 text-center">
-      <div className="flex justify-center">
-        <span className="spin inline-block h-7 w-7 rounded-full border-[3px]" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
-      </div>
-      <p className="mt-5 font-semibold dot">{msg || "Working"}</p>
-      <p className="text-sm mt-1" style={{ color: "var(--faint)" }}>This usually takes under a minute. You can keep this tab open.</p>
-      <div className="flex items-center justify-center flex-nowrap gap-1.5 mt-6 opacity-80 text-xs font-semibold" style={{ color: "var(--muted)" }}>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />Your business</span>
-        <span style={{ color: "var(--faint)" }}>›</span>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />Your buyers</span>
-        <span style={{ color: "var(--faint)" }}>›</span>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--info)" }} />Your signals</span>
-      </div>
-    </div>
+    <button type="button" onClick={onClick} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 whitespace-nowrap"
+      style={{ background: active ? "var(--accent-soft)" : "transparent" }}>
+      <span className="inline-grid place-items-center h-5 w-5 rounded-full text-[11px] font-bold text-white"
+        style={{ background: active || done ? "var(--accent)" : "var(--faint)" }}>{done ? "✓" : n}</span>
+      <span className="text-sm font-medium" style={{ color: active ? "var(--accent-ink)" : "var(--muted)" }}>{label}</span>
+      {hint && <span className="text-xs" style={{ color: "var(--faint)" }}>· {hint}</span>}
+    </button>
   );
 }
-
-function PipeNode({ children, color }: { children: React.ReactNode; color: string }) {
-  return (
-    <span className="pipe-node">
-      <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
-      {children}
-    </span>
-  );
-}
-function PipeSep() {
-  return (
-    <span className="pipe-sep" aria-hidden>
-      <svg width="22" height="12" viewBox="0 0 22 12" fill="none"><path d="M1 6h17m0 0-4-4m4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-    </span>
-  );
-}
-
-function Flow() {
-  return (
-    <div className="flow-line px-2 py-2 lg:py-0 lg:px-1">
-      <svg className="flow-dot hidden lg:block" width="28" height="14" viewBox="0 0 28 14" fill="none">
-        <path d="M1 7h22m0 0-5-5m5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <svg className="flow-dot lg:hidden" width="14" height="22" viewBox="0 0 14 22" fill="none">
-        <path d="M7 1v18m0 0-5-5m5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
+function StepArrow() {
+  return <span style={{ color: "var(--faint)" }} aria-hidden>›</span>;
 }
 
 function Tier({ tag, tagClass, title, sub }: { tag: string; tagClass: string; title: string; sub: string }) {
