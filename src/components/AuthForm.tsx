@@ -28,7 +28,9 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
       }
       const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw new Error(error.message);
-      router.push("/onboarding");
+      // New signups go to onboarding; returning users to the dashboard
+      // (the dashboard layout bounces them to onboarding if they have no profile yet).
+      router.push(mode === "signup" ? "/onboarding" : "/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
