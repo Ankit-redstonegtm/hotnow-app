@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { downloadCSV } from "@/lib/csv";
 import { ConfidenceBadge } from "@/components/ui/Badge";
+import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 
 type Opp = {
   id: string; what_happened: string; why_it_matters: string; confidence: string; evidence_date: string | null; status: string;
@@ -173,8 +174,13 @@ export default function CompaniesPage() {
                 >
                   <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} className="accent-[var(--accent)]" aria-label="Select company" /></td>
                   <td>
-                    <div className="font-medium flex items-center gap-2">{o.companies?.name || o.companies?.normalized_domain}{o.status === "new" && <span className="chip">New</span>}</div>
-                    {o.companies?.normalized_domain && <a href={`https://${o.companies.normalized_domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs" style={{ color: "var(--faint)" }}>{o.companies.normalized_domain} ↗</a>}
+                    <div className="flex items-center gap-2.5">
+                      <CompanyAvatar name={o.companies?.name || ""} domain={o.companies?.normalized_domain} size={30} />
+                      <div className="min-w-0">
+                        <div className="font-medium flex items-center gap-2">{o.companies?.name || o.companies?.normalized_domain}{o.status === "new" && <span className="chip">New</span>}</div>
+                        {o.companies?.normalized_domain && <a href={`https://${o.companies.normalized_domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs" style={{ color: "var(--faint)" }}>{o.companies.normalized_domain} ↗</a>}
+                      </div>
+                    </div>
                   </td>
                   <td>{o.buying_situations?.name && <span className="pill">{o.buying_situations.name}</span>}</td>
                   <td style={{ maxWidth: 420, color: "var(--muted)" }}><div className="line-clamp-2">{o.what_happened}</div></td>

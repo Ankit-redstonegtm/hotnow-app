@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/TopBar";
+import { Spinner } from "@/components/ui/Spinner";
+import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 
 type Step = "domain" | "studio";
 type StudioStep = "company" | "contacts" | "signals";
@@ -269,23 +271,37 @@ export default function Onboarding() {
         <div className="flex-1 flex items-center justify-center px-5 py-10">
           <div className="w-full max-w-xl">
             <div className="text-center">
-              <span className="chip mb-5">Set up in under a minute</span>
+              <span className="chip mb-5">Your AI prospector</span>
               <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
-                Find companies ready to buy, right now.
+                Let&apos;s find companies ready to buy from you.
               </h1>
               <p className="mt-3 text-base" style={{ color: "var(--muted)" }}>
-                Tell us your website. We study your business and build your targeting while you set your filters.
+                Start with your website. I&apos;ll study your business and build your targeting while you set your filters.
               </p>
-              {error && <div className="card p-3 mt-5 text-sm text-left" style={{ color: "var(--accent)" }}>{error}</div>}
-              <form onSubmit={submitDomain} className="card p-2 mt-7 flex flex-col sm:flex-row items-stretch gap-2 text-left">
-                <input className="input border-0 shadow-none text-base flex-1" style={{ background: "transparent" }}
-                  placeholder="yourcompany.com" value={domain} onChange={(e) => setDomain(e.target.value)} required autoFocus />
-                <button className="btn btn-primary px-5 py-3 text-base" disabled={!domain}>Start set-up</button>
+              {error && (
+                <div className="card p-3 mt-5 text-sm text-left" role="alert" style={{ color: "var(--accent)" }}>{error}</div>
+              )}
+              <form onSubmit={submitDomain} className="mt-7 text-left">
+                <label className="section-label block mb-2">Your website</label>
+                <div className="card p-2 flex flex-col sm:flex-row items-stretch gap-2">
+                  <input className="input border-0 shadow-none text-base flex-1" style={{ background: "transparent" }}
+                    placeholder="yourcompany.com" value={domain} onChange={(e) => setDomain(e.target.value)} required autoFocus />
+                  <button className="btn btn-primary px-5 py-3 text-base" disabled={!domain}>Study my business →</button>
+                </div>
+                <details className="group mt-3">
+                  <summary className="text-sm font-medium cursor-pointer select-none list-none inline-flex items-center gap-1.5"
+                    style={{ color: "var(--muted)" }}>
+                    <span aria-hidden className="transition-transform motion-reduce:transition-none group-open:rotate-90" style={{ color: "var(--faint)" }}>›</span>
+                    Add a line on what you sell
+                    <span style={{ color: "var(--faint)" }}>· optional, sharpens the research</span>
+                  </summary>
+                  <input className="input text-sm mt-2.5" placeholder="e.g. We sell commercial roofing software to contractors"
+                    value={desc} onChange={(e) => setDesc(e.target.value)} />
+                </details>
               </form>
-              <div className="mt-3">
-                <input className="input text-sm" placeholder="Optional: one line on what you sell"
-                  value={desc} onChange={(e) => setDesc(e.target.value)} />
-              </div>
+              <p className="mt-6 text-xs inline-flex items-center gap-1.5" style={{ color: "var(--faint)" }}>
+                <Ico name="clock" /> Takes about a minute · you can leave and come back anytime
+              </p>
             </div>
           </div>
         </div>
@@ -299,17 +315,40 @@ export default function Onboarding() {
       <TopBar />
       <div className="mx-auto w-full max-w-3xl px-5 py-8 flex-1 pb-28">
         {/* header */}
-        <div className="flex items-center gap-2">
-          <span className="inline-grid place-items-center h-8 w-8 rounded-lg text-white font-bold" style={{ background: "var(--accent)" }}>
-            {(profile?.company_name || domain).slice(0, 1).toUpperCase()}
-          </span>
+        <div className="flex items-center gap-3">
+          <CompanyAvatar name={profile?.company_name || domain} domain={domain} size={40} />
           <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-tight leading-none truncate">{profile?.company_name || domain}</h1>
-            <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>
-              {researchState === "loading" ? "Studying your website in the background…" : "We studied your business. Set your targeting below."}
-            </p>
+            <p className="text-xs mt-1 truncate" style={{ color: "var(--faint)" }}>{domain}</p>
           </div>
         </div>
+
+        {/* honest background-work status, tied to the real research + signals state */}
+        {researchState !== "error" && (researchState === "loading" || signalsState === "loading") ? (
+          <div className="card p-3 mt-5 flex items-start gap-3">
+            <Spinner size={18} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium leading-tight dot">
+                {researchState === "loading" ? "Understanding your business" : "Identifying buying situations"}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                {researchState === "loading"
+                  ? "Reading your website to learn what you sell and who buys it."
+                  : "Mapping the moments that create demand for you — keep setting your filters."}
+                {" "}You can safely leave this page; we&apos;ll pick up right where you left off.
+              </p>
+            </div>
+          </div>
+        ) : researchState === "ready" && signalsState === "ready" ? (
+          <div className="card p-3 mt-5 flex items-center gap-2.5">
+            <span className="inline-grid place-items-center h-6 w-6 rounded-full shrink-0" style={{ background: "var(--good-soft)", color: "var(--good)" }}>
+              <Ico name="check" />
+            </span>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>
+              <b style={{ color: "var(--fg)" }}>I&apos;ve studied your business.</b> Review the targeting below, then find opportunities.
+            </p>
+          </div>
+        ) : null}
 
         {/* stepper */}
         <div className="card p-3 mt-5">
@@ -329,20 +368,37 @@ export default function Onboarding() {
         {/* ---------- STEP 1: COMPANY ---------- */}
         {studioStep === "company" && (
           <div className="mt-6">
-            {profile?.product_description && !editSummary && (
-              <p className="text-sm mb-4 max-w-2xl" style={{ color: "var(--muted)" }}>
-                {profile.product_description}{" "}
-                <button className="font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setEditSummary(true)}>Edit</button>
-              </p>
-            )}
-            {editSummary && profile && (
+            {/* what HotNow understood about the seller — clear, and one click to edit */}
+            {researchState === "loading" && !profile ? (
+              <div className="card p-5 mb-4">
+                <p className="section-label mb-3">What I&apos;m learning about you</p>
+                <div className="space-y-2.5" aria-hidden>
+                  <div className="skeleton h-3.5 w-3/4 rounded-md" />
+                  <div className="skeleton h-3.5 w-5/6 rounded-md" />
+                  <div className="skeleton h-3.5 w-1/2 rounded-md" />
+                </div>
+              </div>
+            ) : profile && !editSummary ? (
+              <div className="card p-5 mb-4">
+                <div className="flex items-center justify-between gap-3 mb-3.5">
+                  <p className="section-label">What I understood about you</p>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditSummary(true)}>Edit</button>
+                </div>
+                <dl className="space-y-3">
+                  {profile.product_description && <Understood label="What you sell" value={profile.product_description} />}
+                  {profile.target_customers && <Understood label="Who buys" value={profile.target_customers} />}
+                  {profile.problems_solved && <Understood label="Problems you solve" value={profile.problems_solved} />}
+                </dl>
+              </div>
+            ) : editSummary && profile ? (
               <div className="card p-5 mb-4 space-y-3">
+                <p className="section-label">Correct anything I got wrong</p>
                 <Field label="What you sell" value={profile.product_description ?? ""} textarea onChange={(v) => setProfile({ ...profile, product_description: v })} />
                 <Field label="Who buys" value={profile.target_customers ?? ""} textarea onChange={(v) => setProfile({ ...profile, target_customers: v })} />
                 <Field label="Problems you solve" value={profile.problems_solved ?? ""} textarea onChange={(v) => setProfile({ ...profile, problems_solved: v })} />
-                <div><button className="btn btn-ghost btn-sm" onClick={() => setEditSummary(false)}>Done</button></div>
+                <div><button className="btn btn-primary btn-sm" onClick={() => setEditSummary(false)}>Done</button></div>
               </div>
-            )}
+            ) : null}
             <div className="panel">
               <div className="panel-head">
                 <span className="panel-ico" style={{ background: "var(--accent-soft)", color: "var(--accent-ink)" }}><Ico name="building" /></span>
@@ -362,13 +418,17 @@ export default function Onboarding() {
                   </div>
                 </div>
                 <div>
-                  <label className="label">Industries to focus on {researchState === "loading" && <span style={{ color: "var(--faint)" }}>· filling from your site…</span>}</label>
+                  <label className="label">Industries to focus on {researchState === "loading" && <span className="dot font-normal" style={{ color: "var(--faint)" }}>· filling from your site…</span>}</label>
                   <input className="input" value={industries} onChange={(e) => setIndustries(e.target.value)} placeholder="Roofing, Solar, Home services" />
                 </div>
-                <div>
-                  <label className="label">Industries to exclude</label>
-                  <input className="input" value={excluded} onChange={(e) => setExcluded(e.target.value)} placeholder="Staffing, Agencies" />
-                </div>
+                <details className="group">
+                  <summary className="text-xs font-semibold cursor-pointer select-none list-none inline-flex items-center gap-1.5" style={{ color: "var(--muted)" }}>
+                    <span aria-hidden className="transition-transform motion-reduce:transition-none group-open:rotate-90" style={{ color: "var(--faint)" }}>›</span>
+                    Exclude some industries
+                    {excluded.trim() && <span className="pill">on</span>}
+                  </summary>
+                  <input className="input mt-2" value={excluded} onChange={(e) => setExcluded(e.target.value)} placeholder="Staffing, Agencies" />
+                </details>
               </div>
             </div>
           </div>
@@ -415,17 +475,24 @@ export default function Onboarding() {
               </div>
               <div className="panel-body">
                 {signalsState === "loading" || (signalsState === "idle" && situations.length === 0) ? (
-                  <div className="text-center py-6">
-                    <span className="spin inline-block h-6 w-6 rounded-full border-[3px]" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
+                  <div className="flex flex-col items-center text-center py-7">
+                    <Spinner size={26} />
                     <p className="mt-3 text-sm font-medium dot">Finding the moments that create demand</p>
-                    <p className="text-xs mt-1" style={{ color: "var(--faint)" }}>We build these from everything we just learned about your business.</p>
+                    <p className="text-xs mt-1 max-w-sm" style={{ color: "var(--faint)" }}>
+                      I&apos;m building these from everything I just learned about your business. Safe to leave — they&apos;ll be here when you&apos;re back.
+                    </p>
                   </div>
                 ) : situations.length === 0 ? (
-                  <p className="text-sm" style={{ color: "var(--muted)" }}>No signals yet. Add your own below.</p>
+                  <p className="text-sm" style={{ color: "var(--muted)" }}>No signals yet — add your own below to get started.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {situations.map((s) => <SignalRow key={s.id} s={s} onToggle={() => patchSituation(s.id, { enabled: !s.enabled })} onEdit={(f) => patchSituation(s.id, f)} />)}
-                  </div>
+                  <>
+                    <p className="text-xs" style={{ color: "var(--faint)" }}>
+                      <b style={{ color: "var(--muted)" }}>{enabledCount}</b> of {situations.length} on · toggle the ones you want us to watch for.
+                    </p>
+                    <div className="space-y-2">
+                      {situations.map((s) => <SignalRow key={s.id} s={s} onToggle={() => patchSituation(s.id, { enabled: !s.enabled })} onEdit={(f) => patchSituation(s.id, f)} />)}
+                    </div>
+                  </>
                 )}
                 <AddSignal onAdd={addCustomSituation} />
               </div>
@@ -493,28 +560,45 @@ function Tier({ tag, tagClass, title, sub }: { tag: string; tagClass: string; ti
 }
 
 function SignalRow({ s, onToggle, onEdit }: { s: Situation; onToggle: () => void; onEdit: (f: Partial<Situation>) => void }) {
-  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   return (
-    <div className="rounded-[10px] p-3" style={{ border: "1px solid var(--border)", background: s.enabled ? "var(--surface)" : "var(--surface-2)", opacity: s.enabled ? 1 : 0.7 }}>
-      <div className="flex items-start gap-2.5">
-        <input type="checkbox" checked={s.enabled} onChange={onToggle} className="mt-0.5 h-4 w-4 accent-[var(--accent)]" />
+    <div className="rounded-[10px] p-3.5 transition-colors motion-reduce:transition-none"
+      style={{ border: "1px solid var(--border)", background: s.enabled ? "var(--surface)" : "var(--surface-2)" }}>
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium leading-tight">{s.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold leading-tight" style={{ color: s.enabled ? "var(--fg)" : "var(--muted)" }}>{s.name}</p>
             {s.source === "user" && <span className="pill">custom</span>}
           </div>
-          <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{s.description}</p>
-          <button className="text-xs mt-1.5 font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setOpen(!open)}>
-            {open ? "Hide" : "Why this matters"}
-          </button>
-          {open && (
-            <div className="mt-2 space-y-2">
-              <textarea className="input text-xs min-h-[52px]" value={s.demand_hypothesis} onChange={(e) => onEdit({ demand_hypothesis: e.target.value })} />
-            </div>
-          )}
+          {s.description && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{s.description}</p>}
         </div>
+        <Switch on={s.enabled} onToggle={onToggle} label={`${s.enabled ? "Stop watching" : "Watch"} for ${s.name}`} />
       </div>
+      {(s.demand_hypothesis || editing) && (
+        <div className="mt-2.5 pl-2.5" style={{ borderLeft: "2px solid var(--border-strong)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="section-label">Why now</p>
+            <button className="text-xs font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setEditing(!editing)}>
+              {editing ? "Done" : "Edit"}
+            </button>
+          </div>
+          {editing
+            ? <textarea className="input text-xs min-h-[56px] mt-1.5" value={s.demand_hypothesis} onChange={(e) => onEdit({ demand_hypothesis: e.target.value })} />
+            : <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--muted)" }}>{s.demand_hypothesis}</p>}
+        </div>
+      )}
     </div>
+  );
+}
+
+function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onToggle}
+      className="relative shrink-0 rounded-full transition-colors motion-reduce:transition-none focus-ring"
+      style={{ width: 40, height: 24, background: on ? "var(--accent)" : "var(--border-strong)" }}>
+      <span className="absolute rounded-full bg-white transition-transform motion-reduce:transition-none"
+        style={{ width: 20, height: 20, top: 2, left: 2, transform: on ? "translateX(16px)" : "translateX(0)", boxShadow: "0 1px 2px rgba(0,0,0,.25)" }} />
+    </button>
   );
 }
 
@@ -536,6 +620,15 @@ function AddSignal({ onAdd }: { onAdd: (s: { name: string; description: string; 
   );
 }
 
+function Understood({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:gap-3">
+      <dt className="text-xs font-semibold shrink-0 sm:w-28 pt-0.5" style={{ color: "var(--faint)" }}>{label}</dt>
+      <dd className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{value}</dd>
+    </div>
+  );
+}
+
 function Field({ label, value, onChange, textarea }: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean }) {
   return (
     <div>
@@ -551,6 +644,8 @@ const ICOS = {
   building: "M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M14 21V9h5a1 1 0 0 1 1 1v11M7 8h2M7 12h2M7 16h2",
   signal: "M13 2 3 14h7l-1 8 10-12h-7l1-8Z",
   users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11",
+  clock: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z",
+  check: "M20 6 9 17l-5-5",
 } as const;
 function Ico({ name }: { name: keyof typeof ICOS }) {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={ICOS[name]} /></svg>;

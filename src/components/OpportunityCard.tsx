@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { ConfidenceBadge } from "@/components/ui/Badge";
+import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 
 /** One opportunity row as returned by GET /api/opportunities. */
 export type OpportunityRow = {
@@ -57,23 +58,26 @@ export default function OpportunityCard({ opp }: { opp: OpportunityRow }) {
       aria-label={`Open opportunity for ${name}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold truncate">{name}</h3>
-            {opp.status === "new" && <span className="chip">New</span>}
+        <div className="flex items-start gap-3 min-w-0">
+          <CompanyAvatar name={name} domain={domain} size={38} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold truncate">{name}</h3>
+              {opp.status === "new" && <span className="chip">New</span>}
+            </div>
+            {domain && (
+              <a
+                href={`https://${domain}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={stop}
+                className="text-xs hover:underline"
+                style={{ color: "var(--faint)" }}
+              >
+                {domain} ↗
+              </a>
+            )}
           </div>
-          {domain && (
-            <a
-              href={`https://${domain}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={stop}
-              className="text-xs hover:underline"
-              style={{ color: "var(--faint)" }}
-            >
-              {domain} ↗
-            </a>
-          )}
         </div>
         <ConfidenceBadge confidence={opp.confidence} />
       </div>

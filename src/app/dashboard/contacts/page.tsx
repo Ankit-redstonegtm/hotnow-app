@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { downloadCSV } from "@/lib/csv";
 import { EmailStatusBadge, type EmailStatus } from "@/components/ui/Badge";
+import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 
 type Contact = {
   id: string; full_name: string; title: string; linkedin_url: string; priority: string; email: string | null;
@@ -140,7 +141,7 @@ export default function ContactsPage() {
               {shown.map((c) => (
                 <tr key={c.id}>
                   <td><input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} className="accent-[var(--accent)]" /></td>
-                  <td className="font-medium">{c.full_name}</td>
+                  <td className="font-medium"><div className="flex items-center gap-2.5"><CompanyAvatar name={c.full_name || "?"} size={28} /><span>{c.full_name}</span></div></td>
                   <td style={{ color: "var(--muted)", maxWidth: 280 }} className="truncate">{c.title}</td>
                   <td>{c.priority ? <span className={`pill pill-${c.priority.toLowerCase()}`}>{c.priority}</span> : <span className="pill">—</span>}</td>
                   <td>

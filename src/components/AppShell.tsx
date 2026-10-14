@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 const NAV: { group?: string; items: { label: string; href: string; icon: keyof typeof ICONS }[] }[] = [
   {
     items: [
-      { label: "Overview", href: "/dashboard", icon: "home" },
+      { label: "Home", href: "/dashboard", icon: "home" },
       { label: "Companies", href: "/dashboard/companies", icon: "building" },
       { label: "Contacts", href: "/dashboard/contacts", icon: "users" },
       { label: "Lists", href: "/dashboard/lists", icon: "list" },
@@ -16,7 +16,7 @@ const NAV: { group?: string; items: { label: string; href: string; icon: keyof t
   {
     group: "Targeting",
     items: [
-      { label: "Pain-Qualified Signals", href: "/dashboard/signals", icon: "signal" },
+      { label: "Signals", href: "/dashboard/signals", icon: "signal" },
       { label: "Company Criteria", href: "/dashboard/company-criteria", icon: "target" },
       { label: "Contact Criteria", href: "/dashboard/contact-criteria", icon: "sliders" },
     ],

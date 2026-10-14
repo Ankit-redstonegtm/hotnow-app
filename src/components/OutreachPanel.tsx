@@ -147,24 +147,39 @@ export default function OutreachPanel({ opportunityId, contacts, recommendedCont
         </div>
       </div>
 
-      {/* tabs */}
-      <div className="flex items-center gap-1 px-4 pt-3">
-        {(["email", "linkedin"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className="btn btn-sm"
-            style={tab === t
-              ? { background: "var(--accent-soft)", color: "var(--accent-ink)" }
-              : { background: "transparent", color: "var(--muted)" }}
-          >
-            {t === "email" ? "Email" : "LinkedIn"}
-          </button>
-        ))}
+      {/* tabs — segmented control */}
+      <div className="px-4 pt-3">
+        <div
+          role="tablist"
+          aria-label="Outreach channel"
+          className="inline-flex p-0.5 rounded-[10px]"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+        >
+          {(["email", "linkedin"] as const).map((t) => {
+            const active = tab === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t)}
+                className="btn btn-sm focus-ring"
+                style={{
+                  transition: "background .15s ease, color .15s ease, box-shadow .15s ease",
+                  background: active ? "var(--surface)" : "transparent",
+                  color: active ? "var(--fg)" : "var(--muted)",
+                  boxShadow: active ? "0 1px 2px rgba(24,23,26,.08)" : "none",
+                }}
+              >
+                {t === "email" ? "Email" : "LinkedIn"}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="p-4">
+      <div className="p-4" role="tabpanel">
         {fetching && current === undefined ? (
           <div className="py-8 flex justify-center"><Spinner label="Checking for a saved draft…" /></div>
         ) : !hasDraft(current) ? (
@@ -176,7 +191,7 @@ export default function OutreachPanel({ opportunityId, contacts, recommendedCont
               <input type="checkbox" checked={withSequence} onChange={(e) => setWithSequence(e.target.checked)} className="accent-[var(--accent)]" />
               Include a short follow-up sequence
             </label>
-            <button type="button" className="btn btn-primary" onClick={generate} disabled={generating}>
+            <button type="button" className="btn btn-primary focus-ring" onClick={generate} disabled={generating}>
               {generating ? <><Spinner size={15} /> Writing… (~10s)</> : "Generate outreach"}
             </button>
             <p className="text-[11px]" style={{ color: "var(--faint)" }}>
@@ -229,7 +244,7 @@ export default function OutreachPanel({ opportunityId, contacts, recommendedCont
                 <input type="checkbox" checked={withSequence} onChange={(e) => setWithSequence(e.target.checked)} className="accent-[var(--accent)]" />
                 Include a short follow-up sequence
               </label>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={generate} disabled={generating}>
+              <button type="button" className="btn btn-ghost btn-sm focus-ring" onClick={generate} disabled={generating}>
                 {generating ? <><Spinner size={14} /> Regenerating…</> : "Regenerate"}
               </button>
             </div>
