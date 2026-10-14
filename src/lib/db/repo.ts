@@ -436,6 +436,35 @@ export async function getListWithItems(sb: SB, listId: string) {
   return { list, items: items ?? [] };
 }
 
+// ---------------- prewarm research (pre-signup head start) ----------------
+/**
+ * A research task started for a domain BEFORE the user finished signing up, so
+ * the summary is ready by the time they land. Keyed by domain; server-only.
+ */
+export async function getFreshPrewarm(admin: SB, domain: string, maxAgeMs: number) {
+  const { data } = await admin.from("prewarm_research").select("*").eq("domain", domain).maybeSingle();
+  if (!data) return null;
+  if (Date.now() - Date.parse(data.created_at) > maxAgeMs) return null;
+  return data as { domain: string; task_id: string; created_at: string };
+}
+
+export async function upsertPrewarm(admin: SB, domain: string, taskId: string) {
+  const { error } = await admin
+    .from("prewarm_research")
+    .upsert({ domain, task_id: taskId, created_at: new Date().toISOString() }, { onConflict: "domain" });
+  if (error) throw new Error(error.message);
+}
+
+/** Crude global abuse guard: how many prewarms were started in the last `windowMs`. */
+export async function countRecentPrewarms(admin: SB, windowMs: number): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count } = await admin
+    .from("prewarm_research")
+    .select("domain", { count: "exact", head: true })
+    .gte("created_at", since);
+  return count ?? 0;
+}
+
 // ---------------- settings / criteria ----------------
 export async function updateSettings(sb: SB, profileId: string, fields: { slack_webhook_url?: string | null; contact_criteria?: unknown }) {
   const { error } = await sb.from("seller_profiles").update(fields).eq("id", profileId);

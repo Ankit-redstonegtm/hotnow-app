@@ -67,7 +67,20 @@ export default function Onboarding() {
           fetch("/api/situations").then((r) => r.json()),
         ]);
         const p = sr.profile;
-        if (!p) return;
+        if (!p) {
+          // No profile yet. If they arrived from the marketing CTA, their research
+          // is already pre-warming - prefill the domain and kick off the flow so the
+          // summary appears without any retyping.
+          try {
+            const pw = localStorage.getItem("hotnow_pw_domain");
+            if (pw) {
+              localStorage.removeItem("hotnow_pw_domain");
+              setDomain(pw);
+              void startResearchFlow(pw);
+            }
+          } catch { /* no-op */ }
+          return;
+        }
         setProfile({
           company_name: p.company_name, product_description: p.product_description,
           target_customers: p.target_customers, problems_solved: p.problems_solved,
@@ -107,12 +120,18 @@ export default function Onboarding() {
 
   async function research(e: React.FormEvent) {
     e.preventDefault();
+    await startResearchFlow();
+  }
+
+  async function startResearchFlow(domainArg?: string) {
+    const d = (domainArg ?? domain).trim();
+    if (!d) return;
     setBusy(true); setError(null);
     const stop = cycleMsgs(RESEARCH_MSGS);
     try {
       const res = await fetch("/api/seller/research", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ domain, description: desc || undefined }),
+        body: JSON.stringify({ domain: d, description: desc || undefined }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "We could not research that domain. Please check it and try again.");

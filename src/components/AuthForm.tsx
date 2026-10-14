@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,25 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Head start: if they came from the marketing CTA with ?domain=, warm their
+  // research NOW (while they fill in the signup form) and stash it so onboarding
+  // can skip straight to the summary without them retyping the domain.
+  useEffect(() => {
+    if (mode !== "signup") return;
+    try {
+      const d = new URLSearchParams(window.location.search).get("domain")?.trim();
+      if (!d) return;
+      localStorage.setItem("hotnow_pw_domain", d);
+      fetch("/api/prewarm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ domain: d }),
+      }).catch(() => {});
+    } catch {
+      /* no-op */
+    }
+  }, [mode]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
