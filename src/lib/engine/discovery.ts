@@ -1,4 +1,4 @@
-// Stage C/D — Discovery + domain resolution.
+// Stage C/D - Discovery + domain resolution.
 // Launches a FindAll run for a situation (async) and, on ingest, resolves each
 // candidate to a real company domain (the provider url can be a directory page).
 
@@ -8,7 +8,7 @@ import { LIMITS, estimateFindAllCost } from "./config";
 import { normalizeDomain, isAggregatorDomain } from "../util/domain";
 import type { BuyingSituation, Candidate, DiscoveryRunResult, IcpConstraints } from "./types";
 
-/** Stage C — launch discovery. Returns the provider run id to persist (async). */
+/** Stage C - launch discovery. Returns the provider run id to persist (async). */
 export async function launchDiscovery(
   situation: BuyingSituation,
   icp: IcpConstraints,
@@ -56,7 +56,7 @@ export async function discoverCandidates(
   };
 }
 
-/** Stage D — resolve a candidate to its real company domain. */
+/** Stage D - resolve a candidate to its real company domain. */
 export async function resolveDomain(candidate: Candidate): Promise<string> {
   const fromUrl = normalizeDomain(candidate.url);
   if (fromUrl && !isAggregatorDomain(fromUrl)) return fromUrl;
@@ -75,7 +75,7 @@ export async function resolveDomain(candidate: Candidate): Promise<string> {
   } catch {
     /* fall through */
   }
-  return fromUrl; // last resort — may still be a directory; qualification can flag it
+  return fromUrl; // last resort - may still be a directory; qualification can flag it
 }
 
 export function isMatched(c: Candidate): boolean {

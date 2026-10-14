@@ -1,4 +1,4 @@
-// Stage E/F — Qualification + opportunity assembly.
+// Stage E/F - Qualification + opportunity assembly.
 // Turns verified candidates into deliverable opportunities, keeping the verified
 // FACT (what happened) distinct from the INTERPRETATION (why it matters), and
 // enforcing freshness + match status. Dedup against prior delivery is done by the

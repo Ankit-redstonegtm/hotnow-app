@@ -2,7 +2,7 @@
 
 export type Generator = "preview" | "base" | "core" | "pro";
 
-/** Stage A — structured understanding of the seller. */
+/** Stage A - structured understanding of the seller. */
 export interface SellerProfile {
   domain: string;
   companyName: string;
@@ -21,7 +21,7 @@ export interface MatchCondition {
 }
 
 /**
- * Stage B — a buying situation. The discoveryObjective + matchConditions encode
+ * Stage B - a buying situation. The discoveryObjective + matchConditions encode
  * the validated IP: target the BUYER's world, exclude vendors.
  */
 export interface BuyingSituation {
@@ -65,7 +65,7 @@ export interface Basis {
 export interface Candidate {
   candidateId: string;
   name: string;
-  /** provider-returned URL — may be a directory/profile page, not the real domain */
+  /** provider-returned URL - may be a directory/profile page, not the real domain */
   url: string;
   description: string;
   matchStatus: "matched" | "unmatched" | "generated" | string;
@@ -83,7 +83,7 @@ export interface DiscoveryRunResult {
   estCost: number;
 }
 
-/** Stage F — a qualified, deliverable opportunity. */
+/** Stage F - a qualified, deliverable opportunity. */
 export interface Opportunity {
   company: { name: string; domain: string };
   situationName: string;

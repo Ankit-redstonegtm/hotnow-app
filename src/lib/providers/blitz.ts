@@ -1,4 +1,4 @@
-// Blitz API provider — LinkedIn/contact data. Server-side only (BLITZ_API_KEY).
+// Blitz API provider - LinkedIn/contact data. Server-side only (BLITZ_API_KEY).
 // domain -> company LinkedIn -> decision-makers (employee finder).
 
 const BASE = "https://api.blitz-api.ai";
@@ -64,6 +64,16 @@ export async function employeeFinder(opts: {
   const list: any[] = r.employees || r.results || r.data || r.people || [];
   const totalPages = r.total_pages || r.pagination?.total_pages || 1;
   return { employees: list.map(mapEmployee).filter((e) => e.fullName || e.linkedinUrl), totalPages };
+}
+
+/** Find a verified work email for a person by their LinkedIn URL. */
+export async function enrichEmail(personLinkedinUrl: string): Promise<string | null> {
+  if (!personLinkedinUrl) return null;
+  try {
+    const r = await call<any>("POST", "/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl });
+    if (r?.found && typeof r.email === "string" && r.email.trim()) return r.email.trim();
+  } catch { /* no match */ }
+  return null;
 }
 
 function mapEmployee(e: any): BlitzEmployee {

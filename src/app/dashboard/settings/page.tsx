@@ -24,7 +24,7 @@ export default function SettingsPage() {
     setMsg("Sending test…");
     await save();
     const r = await fetch("/api/slack/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ test: true }) });
-    const j = await r.json(); setMsg(r.ok ? "Test sent — check your Slack channel ✓" : j.error);
+    const j = await r.json(); setMsg(r.ok ? "Test sent. Check your Slack channel ✓" : j.error);
   }
 
   return (

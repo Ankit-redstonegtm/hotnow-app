@@ -1,4 +1,4 @@
-// Stage A — Seller understanding. Researches a domain with Parallel Task API and
+// Stage A - Seller understanding. Researches a domain with Parallel Task API and
 // returns a structured SellerProfile. If research is thin, the caller should ask
 // the user for a short product description and re-run with it as additional input.
 

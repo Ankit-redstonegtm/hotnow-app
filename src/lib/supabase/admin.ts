@@ -5,7 +5,7 @@ import { DB_SCHEMA } from "./schema";
 type AnyClient = SupabaseClient<any, any, any, any, any>;
 
 /**
- * Service-role client — bypasses RLS. Server-only, used by the discovery worker
+ * Service-role client - bypasses RLS. Server-only, used by the discovery worker
  * to write companies/candidates/opportunities when there is no user session.
  * NEVER import this into client code.
  */

@@ -1,4 +1,4 @@
-// Contact sourcing — Blitz decision-makers for a company, tiered P1/P2/P3.
+// Contact sourcing - Blitz decision-makers for a company, tiered P1/P2/P3.
 // P1 = economic buyer / decision maker, P2 = champion / influencer, P3 = lower fit.
 
 import { domainToLinkedin, employeeFinder, type BlitzEmployee } from "../providers/blitz";
@@ -26,7 +26,7 @@ export async function sourceContactsForCompany(
   const max = opts.maxPerCall ?? 12;
   const functions = criteria.jobFunctions?.length ? criteria.jobFunctions : DEFAULT_FUNCTIONS;
 
-  // Call A: C-Team (no function filter) — founders/CxO regardless of tagged function.
+  // Call A: C-Team (no function filter) - founders/CxO regardless of tagged function.
   // Call B: senior leaders in the target functions.
   const calls: Promise<{ employees: BlitzEmployee[] }>[] = [
     employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: ["C-Team"], countryCode: criteria.countryCode, maxResults: max }),

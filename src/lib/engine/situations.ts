@@ -1,4 +1,4 @@
-// Stage B — Situation generation. Pure reasoning over the seller profile (Claude).
+// Stage B - Situation generation. Pure reasoning over the seller profile (Claude).
 // Encodes the validated IP: each situation's discoveryObjective must describe the
 // BUYER in the buyer's own world and EXPLICITLY EXCLUDE vendors/competitors, or
 // discovery returns the seller's peers instead of its buyers.
@@ -42,11 +42,11 @@ const SITUATIONS_SCHEMA = {
 
 const SYSTEM = `You are HotNow's situation strategist. A "buying situation" is an observable, dated event or change at a potential customer that creates a reason to buy a specific product RIGHT NOW (e.g. a regulatory warning, territory expansion, an acquisition, a first VP hire, rapid hiring).
 
-Your job: given a seller, propose buying situations and — critically — a web-discovery objective for each that will surface the BUYER experiencing the situation.
+Your job: given a seller, propose buying situations and - critically - a web-discovery objective for each that will surface the BUYER experiencing the situation.
 
 HARD RULES that make or break discovery quality:
 1. The discoveryObjective describes the BUYER in the BUYER'S OWN WORLD (their industry, their event), NOT the seller's product vocabulary. Using the seller's own terms makes web search return the seller's COMPETITORS, not its buyers.
-2. Every discoveryObjective MUST explicitly exclude software/SaaS vendors, consultancies, agencies, staffing firms, and data/directory providers — unless the seller's actual buyers ARE such firms.
+2. Every discoveryObjective MUST explicitly exclude software/SaaS vendors, consultancies, agencies, staffing firms, and data/directory providers - unless the seller's actual buyers ARE such firms.
 3. Each situation must have a clear causal link (demandHypothesis) between the event and the product. No generic firmographics.
 4. matchConditions are verifiable yes/no checks a researcher could confirm from public web evidence. Include one that enforces the buyer is an end-operator (not a vendor), and one that enforces recency with an explicit date window.
 5. Prefer situations with observable, dated public evidence (press releases, job postings, filings, news).
@@ -87,7 +87,7 @@ For each, return an object with:
 - evidence_sources (array: types of sources, e.g. "company press release", "job postings")
 - discovery_objective (the buyer-centric, vendor-excluding natural-language objective for web discovery; name concrete buyer industries/segments and state the recency window relative to today)
 - match_conditions (array of {name, description}; include an end-operator/not-a-vendor check and a recency check with an explicit date window)
-- recommended_generator (one of: base, core — use base for most situations; core only for narrow/rare situations with few expected matches. Do NOT use preview, which is only for query testing.)
+- recommended_generator (one of: base, core - use base for most situations; core only for narrow/rare situations with few expected matches. Do NOT use preview, which is only for query testing.)
 
 Return JSON: { "situations": [ ... ] }`;
 }

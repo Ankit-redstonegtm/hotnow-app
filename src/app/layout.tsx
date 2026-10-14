@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HotNow — Find companies that need what you sell. Every day.",
+  title: "HotNow: Find companies that need what you sell. Every day.",
   description:
     "HotNow finds companies experiencing situations that create demand for your product, with evidence explaining why.",
 };

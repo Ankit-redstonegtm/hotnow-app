@@ -67,7 +67,6 @@ export default function SignalsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium">{s.name}</p>
                     {s.source === "user" && <span className="pill">custom</span>}
-                    <span className="pill">{s.generator}</span>
                   </div>
                   <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{s.description}</p>
                   {s.demand_hypothesis && <p className="text-sm mt-2"><span style={{ color: "var(--faint)" }}>Why it matters: </span>{s.demand_hypothesis}</p>}

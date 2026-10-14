@@ -55,7 +55,7 @@ export default function OverviewPage() {
       {running > 0 && (
         <div className="card p-4 mt-5 flex items-center gap-3">
           <span className="spin inline-block h-4 w-4 rounded-full border-2" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />
-          <span className="text-sm dot">Discovery in progress — {running} search{running > 1 ? "es" : ""} running. Results appear as each finishes.</span>
+          <span className="text-sm dot">Finding companies now · {running} search{running > 1 ? "es" : ""} running. Results appear as each finishes.</span>
         </div>
       )}
 
@@ -79,7 +79,7 @@ export default function OverviewPage() {
             <tbody>
               {opps.slice(0, 8).map((o) => (
                 <tr key={o.id}>
-                  <td className="font-medium">{o.companies?.name || o.companies?.normalized_domain || "—"}</td>
+                  <td className="font-medium">{o.companies?.name || o.companies?.normalized_domain || ""}</td>
                   <td>{o.buying_situations?.name && <span className="pill">{o.buying_situations.name}</span>}</td>
                   <td style={{ color: "var(--muted)", maxWidth: 440 }} className="truncate">{o.what_happened}</td>
                   <td>{o.status === "new" && <span className="chip">New</span>}</td>

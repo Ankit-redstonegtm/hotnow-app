@@ -6,7 +6,7 @@ import { getSellerProfileByUser, companiesNeedingContacts, countCompaniesNeeding
 
 export const maxDuration = 60;
 
-const BATCH = 5; // companies per call — keeps us well under the function limit
+const BATCH = 5; // companies per call - keeps us well under the function limit
 
 export async function POST() {
   try {

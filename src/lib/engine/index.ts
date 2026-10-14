@@ -1,4 +1,4 @@
-// Engine orchestrator — the provider-agnostic interface (spec §7).
+// Engine orchestrator - the provider-agnostic interface (spec §7).
 // Stages: A research → B situations → C/D discover → E/F qualify.
 
 export * from "./types";

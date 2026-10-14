@@ -210,7 +210,7 @@ export async function upsertCompany(admin: SB, domain: string, name: string): Pr
     .select("id")
     .single();
   if (error) {
-    // race: another insert won — re-read
+    // race: another insert won - re-read
     const retry = await admin.from("companies").select("id").eq("normalized_domain", normalized).maybeSingle();
     if (retry.data?.id) return retry.data.id;
     throw new Error(error.message);
@@ -238,7 +238,7 @@ export async function upsertOpportunity(
     .maybeSingle();
 
   if (existing.data?.id) {
-    // already delivered for this (seller, company, situation) — refresh delivery timestamp only
+    // already delivered for this (seller, company, situation) - refresh delivery timestamp only
     await admin.from("opportunities").update({ last_delivered_at: new Date().toISOString() }).eq("id", existing.data.id);
     return { id: existing.data.id, isNew: false };
   }
@@ -336,6 +336,38 @@ export async function saveContacts(
   }
   await admin.from("companies").update({ contacts_sourced_at: new Date().toISOString() }).eq("id", args.companyId);
   return args.contacts.length;
+}
+
+/** Contacts that still need an email lookup (null = never attempted). Highest-priority first. */
+export async function contactsNeedingEmail(sb: SB, sellerProfileId: string, limit: number, tiers?: string[]) {
+  let q = sb
+    .from("contacts")
+    .select("id, linkedin_url, priority")
+    .eq("seller_profile_id", sellerProfileId)
+    .is("email", null)
+    .not("linkedin_url", "is", null)
+    .order("priority", { ascending: true })
+    .limit(limit);
+  if (tiers?.length) q = q.in("priority", tiers);
+  const { data } = await q;
+  return (data ?? []).filter((c: any) => c.linkedin_url);
+}
+
+export async function countContactsNeedingEmail(sb: SB, sellerProfileId: string, tiers?: string[]): Promise<number> {
+  let q = sb
+    .from("contacts")
+    .select("id", { count: "exact", head: true })
+    .eq("seller_profile_id", sellerProfileId)
+    .is("email", null)
+    .not("linkedin_url", "is", null);
+  if (tiers?.length) q = q.in("priority", tiers);
+  const { count } = await q;
+  return count ?? 0;
+}
+
+/** Record an email lookup result. Pass "" to mark "checked, none found" so we never retry. */
+export async function setContactEmail(admin: SB, id: string, email: string) {
+  await admin.from("contacts").update({ email }).eq("id", id);
 }
 
 export async function getContacts(sb: SB, sellerProfileId: string) {

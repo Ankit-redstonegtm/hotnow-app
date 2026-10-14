@@ -3,7 +3,7 @@ import { createClient as createSbClient } from "@supabase/supabase-js";
 
 /**
  * Create a pre-confirmed user with the service role so the person can sign in
- * immediately (no email round-trip) — right for the MVP self-serve flow.
+ * immediately (no email round-trip) - right for the MVP self-serve flow.
  */
 export async function POST(req: Request) {
   try {

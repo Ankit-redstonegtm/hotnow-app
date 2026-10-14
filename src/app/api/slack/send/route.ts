@@ -20,15 +20,15 @@ export async function POST(req: Request) {
       const lines = items.slice(0, 25).map((it: any) => {
         if (it.opportunities) {
           const c = it.opportunities.companies;
-          return `• *${c?.name || c?.normalized_domain}* — ${it.opportunities.buying_situations?.name ?? "signal"}`;
+          return `• *${c?.name || c?.normalized_domain}* · ${it.opportunities.buying_situations?.name ?? "signal"}`;
         }
         if (it.contacts) {
           const c = it.contacts.companies;
-          return `• *${it.contacts.full_name}* (${it.contacts.title}) — ${c?.name || c?.normalized_domain} [${it.contacts.priority}]`;
+          return `• *${it.contacts.full_name}* (${it.contacts.title}) · ${c?.name || c?.normalized_domain} [${it.contacts.priority}]`;
         }
         return null;
       }).filter(Boolean);
-      text = `*${list?.name ?? "List"}* — ${lines.length} from HotNow\n${lines.join("\n")}`;
+      text = `*${list?.name ?? "List"}* · ${lines.length} from HotNow\n${lines.join("\n")}`;
     } else {
       return NextResponse.json({ error: "listId or test required" }, { status: 400 });
     }

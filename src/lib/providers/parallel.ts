@@ -36,7 +36,7 @@ async function call<T = any>(method: string, path: string, body?: unknown, timeo
 }
 
 // ---------------------------------------------------------------------------
-// Task API — deep research with structured JSON output + citations.
+// Task API - deep research with structured JSON output + citations.
 // ---------------------------------------------------------------------------
 export interface TaskResult<T> {
   content: T;
@@ -95,7 +95,7 @@ export async function taskCreate(opts: {
 /**
  * Non-blocking single check of a Task run. IMPORTANT: the /result endpoint
  * long-polls (blocks until the run finishes), so we check STATUS first and only
- * fetch /result once the run is actually complete — otherwise a poll would hang
+ * fetch /result once the run is actually complete - otherwise a poll would hang
  * past the serverless function limit.
  */
 export async function taskCheck<T = any>(
@@ -115,7 +115,7 @@ export async function taskCheck<T = any>(
 }
 
 // ---------------------------------------------------------------------------
-// FindAll API — discovery of entities matching NL criteria, with verification.
+// FindAll API - discovery of entities matching NL criteria, with verification.
 // ---------------------------------------------------------------------------
 export interface FindAllRunHandle {
   runId: string;
@@ -196,7 +196,7 @@ export async function findAllAwait(
 }
 
 // ---------------------------------------------------------------------------
-// Search API — synchronous web search, used for Stage D domain resolution.
+// Search API - synchronous web search, used for Stage D domain resolution.
 // ---------------------------------------------------------------------------
 export async function search(opts: {
   objective: string;

@@ -1,4 +1,4 @@
-// LLM provider dispatcher for reasoning stages (spec §7 — swappable providers).
+// LLM provider dispatcher for reasoning stages (spec §7 - swappable providers).
 // Selects a provider by LLM_PROVIDER, else by whichever API key is present.
 // Default preference: Gemini (current key), then Anthropic Claude.
 
@@ -11,7 +11,7 @@ export type LlmProvider = "gemini" | "anthropic" | "parallel";
  * Pick the reasoning provider. LLM_PROVIDER overrides; otherwise prefer a
  * dedicated LLM key, falling back to "parallel" (Parallel Task API) since the
  * Parallel key is always present for the product. "parallel" callers must supply
- * a JSON schema (askJSON cannot — see reasonWithSchema).
+ * a JSON schema (askJSON cannot - see reasonWithSchema).
  */
 export function activeProvider(): LlmProvider {
   const forced = process.env.LLM_PROVIDER as LlmProvider | undefined;

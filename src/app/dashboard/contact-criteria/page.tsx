@@ -32,7 +32,7 @@ export default function ContactCriteriaPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold tracking-tight">Contact Criteria</h1>
-      <p className="text-sm mt-1 mb-6" style={{ color: "var(--muted)" }}>Who counts as a decision-maker. Blitz sources these roles at each discovered company; HotNow tiers them P1 / P2 / P3.</p>
+      <p className="text-sm mt-1 mb-6" style={{ color: "var(--muted)" }}>Who counts as a decision-maker. We find these roles at every company you discover and rank them P1, P2, and P3 so you reach the right people first.</p>
       {!loaded ? <div className="card p-6"><div className="skeleton h-5 w-40 rounded" /></div> : (
         <div className="card p-6 space-y-6">
           <div>

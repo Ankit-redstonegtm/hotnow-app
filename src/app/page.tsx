@@ -24,7 +24,7 @@ export default async function Home() {
         </h1>
         <p className="mt-5 text-lg" style={{ color: "var(--muted)" }}>
           HotNow finds companies experiencing situations that create demand for your
-          product — with evidence explaining why each one matters right now.
+          product, with evidence explaining why each one matters right now.
         </p>
         <div className="mt-8 flex items-center gap-3">
           <Link href="/signup" className="btn btn-primary px-6 py-3 text-base">Find my customers</Link>
