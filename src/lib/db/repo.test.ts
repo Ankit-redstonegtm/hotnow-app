@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isStrongerEvidence, setContactEmail, upsertOpportunity } from "./repo";
+import { isStrongerEvidence, setContactEmail, upsertOpportunity, setOpportunityFeedback } from "./repo";
 import type { Opportunity } from "../engine/types";
 
 // ---- pure dedup decision ----
@@ -43,6 +43,20 @@ describe("setContactEmail", () => {
     const { admin, calls } = mockAdmin();
     await setContactEmail(admin, "id2", "");
     expect(calls[0].patch).toEqual({ email: "", email_status: "none" });
+  });
+});
+
+describe("setOpportunityFeedback", () => {
+  it("upserts verdict + reason scoped to the opportunity and seller", async () => {
+    const calls: Array<{ row: any; opts: any }> = [];
+    const admin = {
+      from() {
+        return { upsert: async (row: any, opts: any) => { calls.push({ row, opts }); return { error: null }; } };
+      },
+    } as any;
+    await setOpportunityFeedback(admin, { opportunityId: "O1", sellerProfileId: "S1", verdict: "not_relevant", reason: "weak_evidence" });
+    expect(calls[0].row).toMatchObject({ opportunity_id: "O1", seller_profile_id: "S1", verdict: "not_relevant", reason: "weak_evidence" });
+    expect(calls[0].opts).toEqual({ onConflict: "opportunity_id" });
   });
 });
 

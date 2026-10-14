@@ -3,6 +3,7 @@ import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { sourceContactsForCompany, type ContactCriteria } from "@/lib/engine/contacts";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSellerProfileByUser, companiesNeedingContacts, countCompaniesNeedingContacts, saveContacts } from "@/lib/db/repo";
+import { log } from "@/lib/log";
 
 export const maxDuration = 60;
 
@@ -32,8 +33,9 @@ export async function POST() {
           contacts,
         });
         totalContacts += n;
-      } catch {
+      } catch (err) {
         // mark as attempted so we don't loop forever on a failing company
+        log.warn("contacts.source", { companyId: c.companyId, domain: c.domain, err });
         await saveContacts(admin, { sellerProfileId: profile.id, companyId: c.companyId, opportunityId: c.opportunityId, contacts: [] });
       }
     }
@@ -42,6 +44,7 @@ export async function POST() {
     return NextResponse.json({ sourced: pending.length, contacts: totalContacts, remaining, done: remaining === 0 });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    log.error("api.contacts_source", { err: e });
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
 }

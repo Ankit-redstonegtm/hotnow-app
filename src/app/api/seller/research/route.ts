@@ -4,6 +4,7 @@ import { startResearch } from "@/lib/engine";
 import { normalizeDomain } from "@/lib/util/domain";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { beginResearch, getFreshPrewarm } from "@/lib/db/repo";
+import { log } from "@/lib/log";
 
 // Non-blocking: creates the research task and returns immediately. Client polls GET.
 export const maxDuration = 60;
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: "running", prewarmed: reusedPrewarm });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    log.error("api.seller_research", { err: e });
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import {
   getOpportunityDetail,
   getContactsForCompany,
   getOutreachDrafts,
+  getOpportunityFeedback,
 } from "@/lib/db/repo";
 import { log } from "@/lib/log";
 
@@ -24,6 +25,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const companyId = company?.id as string | undefined;
     const contacts = companyId ? await getContactsForCompany(sb, profile.id, companyId) : [];
     const draftRows = await getOutreachDrafts(sb, id, null, profile.id);
+    const feedback = await getOpportunityFeedback(sb, id); // null until the feedback migration is applied
 
     const evidence = ((row as any).evidence ?? []).map((e: any) => {
       const cite = e.citation ?? {};
@@ -67,6 +69,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       contacts: contactsOut,
       recommendedContactId: recommend(contactsOut),
       draftsByContactId,
+      feedback,
     });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

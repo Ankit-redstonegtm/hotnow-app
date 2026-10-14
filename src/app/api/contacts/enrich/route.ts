@@ -8,6 +8,7 @@ import {
   countContactsNeedingEmail,
   setContactEmail,
 } from "@/lib/db/repo";
+import { log } from "@/lib/log";
 
 export const maxDuration = 60;
 
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ found, remaining, done: remaining === 0 });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    log.error("api.contacts_enrich", { err: e });
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
   }
 }

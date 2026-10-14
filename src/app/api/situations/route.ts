@@ -3,6 +3,7 @@ import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { startSituations } from "@/lib/engine";
 import type { SellerProfile } from "@/lib/engine";
 import { getSellerProfileByUser, getSituations, replaceSituations, updateSituation, updateSellerProfile } from "@/lib/db/repo";
+import { log } from "@/lib/log";
 
 export const maxDuration = 60;
 
@@ -70,5 +71,6 @@ export async function PATCH(req: Request) {
 function handle(e: unknown) {
   if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const msg = e instanceof Error ? e.message : "unknown error";
+  log.error("api.situations", { err: e });
   return NextResponse.json({ error: msg }, { status: 500 });
 }

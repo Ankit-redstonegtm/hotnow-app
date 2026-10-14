@@ -15,6 +15,7 @@ import { startResearch } from "@/lib/engine";
 import { normalizeDomain, isAggregatorDomain } from "@/lib/util/domain";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getFreshPrewarm, upsertPrewarm, countRecentPrewarms } from "@/lib/db/repo";
+import { rateLimit, clientIp } from "@/lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -29,6 +30,10 @@ function looksLikeDomain(d: string): boolean {
 
 export async function POST(req: Request) {
   try {
+    // Per-IP throttle (first line); the global per-minute DB cap below is the hard backstop.
+    if (!rateLimit(`prewarm:${clientIp(req)}`, 8, 60_000)) {
+      return NextResponse.json({ status: "busy" }, { status: 429 });
+    }
     const body = await req.json().catch(() => ({}));
     const domain = normalizeDomain(String(body?.domain ?? ""));
 

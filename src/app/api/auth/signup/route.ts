@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSbClient } from "@supabase/supabase-js";
+import { rateLimit, clientIp } from "@/lib/ratelimit";
 
 /**
  * Create a pre-confirmed user with the service role so the person can sign in
@@ -7,6 +8,10 @@ import { createClient as createSbClient } from "@supabase/supabase-js";
  */
 export async function POST(req: Request) {
   try {
+    // Throttle account creation per IP to blunt automated signup abuse.
+    if (!rateLimit(`signup:${clientIp(req)}`, 5, 60_000)) {
+      return NextResponse.json({ error: "Too many attempts. Please wait a minute and try again." }, { status: 429 });
+    }
     const { email, password } = await req.json();
     if (!email || !password || String(password).length < 8) {
       return NextResponse.json({ error: "Email and an 8+ character password are required." }, { status: 400 });

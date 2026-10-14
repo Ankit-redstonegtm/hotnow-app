@@ -643,6 +643,47 @@ export async function saveOutreachDrafts(
   if (error) throw new Error(error.message);
 }
 
+// ---------------- opportunity feedback (quality signal for the founder) ----------------
+export const FEEDBACK_REASONS = ["wrong_company", "wrong_timing", "weak_evidence", "wrong_contact", "other"] as const;
+export type FeedbackReason = (typeof FEEDBACK_REASONS)[number];
+
+/** True if the opportunity exists AND belongs to this seller (RLS-scoped). */
+export async function opportunityBelongsToSeller(sb: SB, opportunityId: string, sellerProfileId: string): Promise<boolean> {
+  const { data } = await sb
+    .from("opportunities")
+    .select("id")
+    .eq("id", opportunityId)
+    .eq("seller_profile_id", sellerProfileId)
+    .maybeSingle();
+  return Boolean(data?.id);
+}
+
+export async function getOpportunityFeedback(sb: SB, opportunityId: string) {
+  const { data } = await sb
+    .from("opportunity_feedback")
+    .select("verdict, reason, updated_at")
+    .eq("opportunity_id", opportunityId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+export async function setOpportunityFeedback(
+  sb: SB,
+  args: { opportunityId: string; sellerProfileId: string; verdict: "useful" | "not_relevant"; reason?: string | null },
+) {
+  const { error } = await sb.from("opportunity_feedback").upsert(
+    {
+      opportunity_id: args.opportunityId,
+      seller_profile_id: args.sellerProfileId,
+      verdict: args.verdict,
+      reason: args.reason ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "opportunity_id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
 // ---------------- usage counters (per-user daily spend cap) ----------------
 export async function getTodayUsage(admin: SB, userId: string): Promise<{ runs: number; cost: number }> {
   const { data } = await admin

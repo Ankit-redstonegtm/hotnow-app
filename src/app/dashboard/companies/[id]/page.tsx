@@ -6,7 +6,10 @@ import Link from "next/link";
 import { ConfidenceBadge, PriorityBadge, EmailStatusBadge, type Priority, type EmailStatus } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
+import { useToast } from "@/components/ui/Toast";
 import OutreachPanel, { type OutreachContact, type OutreachContent } from "@/components/OutreachPanel";
+
+type Feedback = { verdict: "useful" | "not_relevant"; reason: string | null; updated_at: string } | null;
 
 type Detail = {
   opportunity: {
@@ -33,6 +36,7 @@ type Detail = {
   }>;
   recommendedContactId: string | null;
   draftsByContactId: Record<string, OutreachContent>;
+  feedback?: Feedback;
 };
 
 function fmtDate(iso: string | null): string | null {
@@ -178,6 +182,8 @@ function Loaded({ data }: { data: Detail }) {
           </div>
         </div>
       </header>
+
+      <FeedbackBar opportunityId={o.id} initial={data.feedback ?? null} />
 
       {/* ── 01 · Why now ── */}
       <section>
@@ -326,6 +332,85 @@ function Loaded({ data }: { data: Detail }) {
           initialDraftsByContactId={draftsByContactId}
         />
       </section>
+    </div>
+  );
+}
+
+const REASONS: Array<{ key: string; label: string }> = [
+  { key: "wrong_company", label: "Wrong company" },
+  { key: "wrong_timing", label: "Wrong timing" },
+  { key: "weak_evidence", label: "Weak evidence" },
+  { key: "wrong_contact", label: "Wrong contact" },
+  { key: "other", label: "Other" },
+];
+
+/** Lightweight quality signal: was this opportunity useful? (optional reason if not). */
+function FeedbackBar({ opportunityId, initial }: { opportunityId: string; initial: Feedback }) {
+  const { toast } = useToast();
+  const [verdict, setVerdict] = useState<"useful" | "not_relevant" | null>(initial?.verdict ?? null);
+  const [reason, setReason] = useState<string | null>(initial?.reason ?? null);
+  const [showReasons, setShowReasons] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function send(v: "useful" | "not_relevant", r: string | null) {
+    setBusy(true);
+    const prev = { verdict, reason };
+    setVerdict(v); setReason(r);
+    try {
+      const res = await fetch(`/api/opportunities/${opportunityId}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ verdict: v, reason: r }),
+      });
+      if (!res.ok) throw new Error((await res.json())?.error || "Could not save");
+      toast({ title: "Thanks — noted.", description: v === "useful" ? "We'll find more like this." : "We'll use this to tune your signals.", variant: "success" });
+    } catch (e) {
+      setVerdict(prev.verdict); setReason(prev.reason);
+      toast({ title: "Couldn't save feedback", description: e instanceof Error ? e.message : "Please try again.", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const pillStyle = (active: boolean, tone: "good" | "muted") =>
+    active
+      ? tone === "good"
+        ? { background: "var(--good-soft)", color: "var(--good)", borderColor: "transparent" }
+        : { background: "var(--surface-2)", color: "var(--fg)", borderColor: "var(--border-strong)" }
+      : undefined;
+
+  return (
+    <div className="card px-4 py-3 flex items-center gap-3 flex-wrap" style={{ background: "var(--surface-2)" }}>
+      <span className="text-sm font-medium">Was this useful?</span>
+      <button className="btn btn-sm focus-ring" disabled={busy} style={pillStyle(verdict === "useful", "good")} onClick={() => send("useful", null)}>
+        👍 Useful
+      </button>
+      <button
+        className="btn btn-sm focus-ring"
+        disabled={busy}
+        style={pillStyle(verdict === "not_relevant", "muted")}
+        onClick={() => { setShowReasons((s) => !s || verdict !== "not_relevant"); if (verdict !== "not_relevant") send("not_relevant", null); }}
+      >
+        👎 Not relevant
+      </button>
+      {verdict === "not_relevant" && (
+        <>
+          <button className="text-xs underline focus-ring rounded" style={{ color: "var(--muted)" }} onClick={() => setShowReasons((s) => !s)}>
+            {reason ? `Reason: ${REASONS.find((x) => x.key === reason)?.label ?? reason}` : "Add a reason"}
+          </button>
+          {showReasons && (
+            <div className="flex items-center gap-1.5 flex-wrap basis-full mt-1">
+              {REASONS.map((r) => (
+                <button key={r.key} className="pill focus-ring" disabled={busy}
+                  style={reason === r.key ? { background: "var(--accent-soft)", color: "var(--accent-ink)", borderColor: "transparent" } : undefined}
+                  onClick={() => { send("not_relevant", r.key); setShowReasons(false); }}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

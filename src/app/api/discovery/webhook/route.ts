@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRunByProviderJobId } from "@/lib/db/repo";
 import { ingestRun, notifyIfWaveComplete } from "@/lib/discovery/worker";
+import { log } from "@/lib/log";
 
 export const maxDuration = 300;
 
@@ -42,9 +43,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, idempotent: true, status: run.status });
   }
 
-  const result = await ingestRun(admin, run);
-  await notifyIfWaveComplete(admin, run.seller_profile_id);
-  return NextResponse.json({ ok: true, ...result });
+  try {
+    const result = await ingestRun(admin, run);
+    await notifyIfWaveComplete(admin, run.seller_profile_id);
+    log.info("webhook.ingest", { runId: run.id, status: result.status, newOpps: result.newOpps });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    // Acknowledge (200) so Parallel doesn't retry-storm; reconcileStuckRuns re-ingests later.
+    log.error("webhook.ingest", { runId: run.id, err });
+    return NextResponse.json({ ok: false, error: "ingest deferred" });
+  }
 }
 
 // Some webhook systems send a GET to validate the endpoint; answer it.
