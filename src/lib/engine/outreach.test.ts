@@ -52,3 +52,46 @@ describe("generateOutreach", () => {
     await expect(generateOutreach(input)).rejects.toThrow(/no usable/i);
   });
 });
+
+describe("outreach prompt grounding (Step 6A compatibility)", () => {
+  const ok = { email: { subject: "s", body: "b" }, linkedin: { body: "l" } };
+
+  it("feeds Gemini the seller value prop, company domain, persona tier, event, and evidence URL", async () => {
+    reasonWithSchema.mockResolvedValue(ok);
+    await generateOutreach({
+      ...input,
+      seller: { ...input.seller, valueProposition: "Cut last-mile delivery costs 20%." },
+      opportunity: { ...input.opportunity, companyDomain: "acme.com" },
+    });
+    const prompt: string = reasonWithSchema.mock.calls[0][0].prompt;
+    expect(prompt).toContain("Cut last-mile delivery costs"); // value proposition
+    expect(prompt).toContain("acme.com"); // company domain
+    expect(prompt).toContain("P1"); // persona tier
+    expect(prompt).toContain("opened its first UK store"); // observed event
+    expect(prompt).toContain("https://news/1"); // evidence source URL
+    // fact vs inference is explicit in the prompt framing
+    expect(prompt).toMatch(/verified fact/i);
+    expect(prompt).toMatch(/inference, not fact/i);
+  });
+
+  it("works for a Task-discovered opportunity with no contact email and no evidence", async () => {
+    reasonWithSchema.mockResolvedValue(ok);
+    const out = await generateOutreach({
+      seller: { companyName: "SPOTIO", productDescription: "Field sales execution platform" },
+      opportunity: { companyName: "Acme Roofing", situationName: "Scaling field teams", whatHappened: "Posted 6 outside sales roles", whyItMatters: "Scaling field reps often needs territory tooling", evidence: [] },
+      contact: { fullName: "Pat Rowe", title: "Director of Field Operations", priority: "P1" },
+    });
+    expect(out.email).toBeTruthy();
+    const prompt: string = reasonWithSchema.mock.calls[0][0].prompt;
+    expect(prompt).toContain("Director of Field Operations");
+    expect(prompt).toMatch(/none beyond the summary/i); // graceful empty-evidence handling
+  });
+
+  it("tolerates a partial seller profile (no value proposition)", async () => {
+    reasonWithSchema.mockResolvedValue(ok);
+    const out = await generateOutreach({ ...input, seller: { companyName: "ShipFast", productDescription: "" } });
+    expect(out.email).toBeTruthy();
+    const prompt: string = reasonWithSchema.mock.calls[0][0].prompt;
+    expect(prompt).not.toContain("Value proposition:"); // omitted cleanly when absent
+  });
+});

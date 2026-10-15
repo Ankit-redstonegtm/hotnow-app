@@ -12,9 +12,11 @@ export interface OutreachInput {
   seller: {
     companyName: string;
     productDescription: string;
+    valueProposition?: string;
   };
   opportunity: {
     companyName: string;
+    companyDomain?: string;
     situationName: string;
     whatHappened: string; // the verified fact
     whyItMatters: string; // the interpretation / demand hypothesis
@@ -84,20 +86,20 @@ function buildPrompt(input: OutreachInput): string {
     opportunity.evidence.length > 0
       ? opportunity.evidence
           .slice(0, 5)
-          .map((e, i) => `  ${i + 1}. ${e.title || e.url}${e.date ? ` (${e.date})` : ""}`)
+          .map((e, i) => `  ${i + 1}. ${e.title || "source"}${e.date ? ` (${e.date})` : ""}${e.url ? ` — ${e.url}` : ""}`)
           .join("\n")
       : "  (none beyond the summary above)";
 
   return `SELLER
   Company: ${seller.companyName}
-  What they sell: ${seller.productDescription}
+  What they sell: ${seller.productDescription}${seller.valueProposition ? `\n  Value proposition: ${seller.valueProposition}` : ""}
 
 PROSPECT
-  Company: ${opportunity.companyName}
+  Company: ${opportunity.companyName}${opportunity.companyDomain ? ` (${opportunity.companyDomain})` : ""}
   Buying situation: ${opportunity.situationName}
   What happened (verified fact): ${opportunity.whatHappened}
-  Why it matters (for the seller's product): ${opportunity.whyItMatters}
-  Supporting evidence (titles only - do not fabricate details beyond these):
+  Why it matters (inference, not fact): ${opportunity.whyItMatters}
+  Supporting evidence (use only what's here; do not fabricate details beyond these):
 ${evidenceLines}
 
 CONTACT

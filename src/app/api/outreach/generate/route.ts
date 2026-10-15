@@ -43,9 +43,11 @@ export async function POST(req: Request) {
       seller: {
         companyName: profile.company_name ?? profile.domain ?? "our company",
         productDescription: profile.product_description ?? "",
+        valueProposition: profile.problems_solved ?? "",
       },
       opportunity: {
         companyName: company?.name ?? "the company",
+        companyDomain: company?.normalized_domain ?? undefined,
         situationName: (row as any).buying_situations?.name ?? "a buying signal",
         whatHappened: row.what_happened ?? "",
         whyItMatters: row.why_it_matters ?? "",
