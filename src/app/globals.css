@@ -14,16 +14,43 @@
   --accent: #f0333b;
   --accent-ink: #cf1f27;
   --accent-soft: #fdecec;
+  /* semantic colors — kept SEPARATE from brand red (brand decision) */
   --good: #16a06a;
   --good-soft: #e6f6ee;
-  --warn: #c98a12;
   --info: #2f6df0;
-  --p1: #f0333b;
-  --p2: #2f6df0;
-  --p3: #6b6771;
-  --radius: 12px;
-  --radius-sm: 9px;
+  --info-soft: #e8f0fe;
+  --warn: #c98a12;
+  --warn-soft: #fbf1dd;
+  --danger: #b42318;        /* errors/destructive — a distinct, darker red, NOT the brand red */
+  --danger-soft: #fdeceb;
+
+  /* contact-priority ramp — deliberately NOT brand red */
+  --p1: #5b4bd6;            /* decision-maker — indigo */
+  --p1-soft: #eeecfb;
+  --p2: #0e8f9f;            /* champion — teal */
+  --p2-soft: #e2f4f6;
+  --p3: #6b6771;            /* stakeholder — gray */
+  --p3-soft: #f1efee;
+
+  /* radius scale */
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 14px;
   --sidebar: 236px;
+
+  /* elevation */
+  --shadow-xs: 0 1px 2px rgba(24,23,26,.04);
+  --shadow-sm: 0 1px 2px rgba(24,23,26,.05), 0 1px 3px rgba(24,23,26,.04);
+  --shadow-md: 0 4px 12px -4px rgba(24,23,26,.12), 0 2px 4px -2px rgba(24,23,26,.06);
+  --shadow-lg: 0 12px 32px -8px rgba(24,23,26,.20), 0 4px 10px -4px rgba(24,23,26,.10);
+
+  /* type scale */
+  --text-11: 11px; --text-xs: 12px; --text-sm: 13px; --text-base: 14px;
+  --text-md: 16px; --text-lg: 18px; --text-xl: 22px; --text-2xl: 28px; --text-display: 36px;
+
+  /* motion */
+  --dur-fast: 120ms; --dur: 160ms; --dur-slow: 240ms;
+  --ease: cubic-bezier(.2,0,0,1);
 }
 
 @theme inline {
@@ -84,9 +111,9 @@ body {
   /* badges / pills */
   .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold; background: var(--accent-soft); color: var(--accent-ink); }
   .pill { @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
-  .pill-p1 { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
-  .pill-p2 { background: #e8f0fe; color: #1b4fd0; border-color: transparent; }
-  .pill-p3 { background: var(--surface-2); color: var(--muted); }
+  .pill-p1 { background: var(--p1-soft); color: var(--p1); border-color: transparent; }
+  .pill-p2 { background: var(--p2-soft); color: var(--p2); border-color: transparent; }
+  .pill-p3 { background: var(--p3-soft); color: var(--p3); border-color: transparent; }
 
   /* data table */
   .tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
@@ -255,3 +282,20 @@ body {
 
 /* Standardized small section label (uppercase, faint, tracked) for consistent hierarchy. */
 .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+
+/* ============================================================
+   Design-system v2 — Radix overlay motion + helpers
+   ============================================================ */
+@keyframes ds-overlay-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ds-overlay-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes ds-pop-in  { from { opacity: 0; transform: translateY(4px) scale(.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes ds-pop-out { from { opacity: 1; transform: translateY(0) scale(1) } to { opacity: 0; transform: translateY(4px) scale(.98) } }
+
+.ds-overlay[data-state="open"]  { animation: ds-overlay-in var(--dur) var(--ease); }
+.ds-overlay[data-state="closed"]{ animation: ds-overlay-out var(--dur-fast) var(--ease); }
+.ds-pop[data-state="open"]   { animation: ds-pop-in var(--dur) var(--ease); transform-origin: var(--radix-popper-transform-origin, center); }
+.ds-pop[data-state="closed"] { animation: ds-pop-out var(--dur-fast) var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-overlay, .ds-pop { animation: none !important; }
+}
