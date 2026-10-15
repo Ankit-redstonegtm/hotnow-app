@@ -19,6 +19,9 @@ Branch `mvp-build`. Do not deploy or apply prod migrations without founder appro
 | `ADMIN_EMAILS` | Admin console allowlist override | No |
 | `CRON_SECRET` | Guards `/api/cron/discover` (fail-closed) | **Yes** (cron is inert without it) |
 | `DAILY_DISCOVERY_ENABLED` | Turns on scheduled paid discovery | No — leave unset/`false` until approved |
+| `CLAY_API_KEY` | Clay Public API key (server-only) for the Seller-Intelligence workflow | Only if using the Clay path |
+| `CLAY_SELLER_ROUTINE_ID` | Clay routine id to run | No (defaults to `workflow:wf_0tmxbl8enV2ZTXSfktn`) |
+| `NEXT_PUBLIC_USE_CLAY` | `true` routes onboarding through Clay (falls back to Parallel+Gemini) | No — leave unset until Clay path is validated in prod |
 
 Report only names here; never print values. `vercel env pull` returns Sensitive vars empty by design.
 

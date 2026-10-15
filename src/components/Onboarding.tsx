@@ -135,6 +135,20 @@ export default function Onboarding() {
 
     (async () => {
       try {
+        // New path: one Clay workflow produces seller profile + ICP + 5 situations.
+        // If Clay isn't configured or won't start, fall through to the Parallel+Gemini
+        // path below (no Clay run was created, so there's no double paid run).
+        if (process.env.NEXT_PUBLIC_USE_CLAY === "true") {
+          const started = await startClayIntelligence(d);
+          if (started) {
+            await pollUntilDone("/api/seller/intelligence/status", 90);
+            await loadSellerAndSituationsIntoUI();
+            setResearchState("ready");
+            setSignalsState("ready");
+            return;
+          }
+        }
+
         const res = await fetch("/api/seller/research", {
           method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ domain: d, description: desc || undefined }),
@@ -169,6 +183,38 @@ export default function Onboarding() {
         setError(msg(err));
       }
     })();
+  }
+
+  // Start the Clay seller-intelligence run. Returns true if it started (poll the status
+  // route next), false if Clay is unavailable/failed to start (caller falls back).
+  async function startClayIntelligence(d: string): Promise<boolean> {
+    try {
+      const res = await fetch("/api/seller/intelligence", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ domain: d }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // After Clay completes, populate the studio from the persisted profile + situations.
+  async function loadSellerAndSituationsIntoUI() {
+    const [sr, situ] = await Promise.all([
+      fetch("/api/seller").then((r) => r.json()).catch(() => ({})),
+      fetch("/api/situations").then((r) => r.json()).catch(() => ({})),
+    ]);
+    const p = sr.profile;
+    if (p) {
+      setProfile({
+        company_name: p.company_name, product_description: p.product_description,
+        target_customers: p.target_customers, problems_solved: p.problems_solved,
+        buyer_personas: p.buyer_personas, industries: p.industries,
+      });
+      if (p.industries?.length) setIndustries((cur) => cur || p.industries.join(", "));
+    }
+    if (situ.situations?.length) setSituations(situ.situations);
   }
 
   async function generateSignals() {
