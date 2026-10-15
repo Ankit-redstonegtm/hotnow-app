@@ -169,14 +169,14 @@ export async function getIcp(sb: SB, sellerProfileId: string): Promise<IcpConstr
 // ---------------- discovery runs ----------------
 export async function createRun(
   sb: SB,
-  r: { sellerProfileId: string; situationId: string; generator: string; matchLimit: number; providerJobId: string; estCost: number },
+  r: { sellerProfileId: string; situationId: string; generator: string; matchLimit: number; providerJobId: string; estCost: number; provider?: string },
 ): Promise<string> {
   const { data, error } = await sb
     .from("discovery_runs")
     .insert({
       seller_profile_id: r.sellerProfileId,
       situation_id: r.situationId,
-      provider: "parallel",
+      provider: r.provider ?? "parallel",
       provider_job_id: r.providerJobId,
       generator: r.generator,
       match_limit: r.matchLimit,
@@ -187,6 +187,22 @@ export async function createRun(
     .single();
   if (error) throw new Error(error.message);
   return data.id;
+}
+
+/** Map situation_id -> most recent run timestamp (ms epoch), for the balanced selector. */
+export async function getLastRunAtBySituation(sb: SB, sellerProfileId: string): Promise<Record<string, number>> {
+  const { data } = await sb
+    .from("discovery_runs")
+    .select("situation_id, requested_at")
+    .eq("seller_profile_id", sellerProfileId)
+    .order("requested_at", { ascending: false });
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as Array<{ situation_id: string | null; requested_at: string }>) {
+    if (!r.situation_id || out[r.situation_id] != null) continue; // first seen = most recent
+    const t = Date.parse(r.requested_at);
+    if (!Number.isNaN(t)) out[r.situation_id] = t;
+  }
+  return out;
 }
 
 export async function getRuns(sb: SB, sellerProfileId: string, statuses?: string[]) {

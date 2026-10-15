@@ -7,7 +7,8 @@ import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSellerProfileByUser, getSituations, getRuns } from "@/lib/db/repo";
-import { ingestRun, notifyIfWaveComplete, toSituation } from "@/lib/discovery/worker";
+import { notifyIfWaveComplete, toSituation } from "@/lib/discovery/worker";
+import { ingestAnyRun } from "@/lib/discovery/task-discovery";
 
 export const maxDuration = 300;
 
@@ -25,7 +26,7 @@ export async function POST() {
     const report = [] as Array<{ runId: string; status: string; matched?: number; newOpps?: number; error?: string }>;
     for (const run of running) {
       const sRow = sitById.get(run.situation_id);
-      const res = await ingestRun(admin, run, sRow ? toSituation(sRow) : undefined);
+      const res = await ingestAnyRun(admin, run, sRow ? toSituation(sRow) : undefined);
       report.push(res);
     }
 

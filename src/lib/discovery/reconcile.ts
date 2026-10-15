@@ -12,7 +12,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LIMITS } from "@/lib/engine";
 import { getStuckRuns } from "@/lib/db/repo";
-import { ingestRun, notifyIfWaveComplete } from "./worker";
+import { notifyIfWaveComplete } from "./worker";
+import { ingestAnyRun } from "./task-discovery";
 import { log } from "@/lib/log";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +33,7 @@ export async function reconcileStuckRuns(admin: SB, minutes = LIMITS.stuckRunMin
 
   for (const run of stuck) {
     try {
-      const res = await ingestRun(admin, run);
+      const res = await ingestAnyRun(admin, run);
       if (res.status === "completed") summary.finalized++;
       else if (res.status === "failed") summary.failed++;
       else summary.stillRunning++;

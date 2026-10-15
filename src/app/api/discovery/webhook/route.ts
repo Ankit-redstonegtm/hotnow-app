@@ -12,7 +12,8 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRunByProviderJobId } from "@/lib/db/repo";
-import { ingestRun, notifyIfWaveComplete } from "@/lib/discovery/worker";
+import { notifyIfWaveComplete } from "@/lib/discovery/worker";
+import { ingestAnyRun } from "@/lib/discovery/task-discovery";
 import { log } from "@/lib/log";
 
 export const maxDuration = 300;
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await ingestRun(admin, run);
+    const result = await ingestAnyRun(admin, run);
     await notifyIfWaveComplete(admin, run.seller_profile_id);
     log.info("webhook.ingest", { runId: run.id, status: result.status, newOpps: result.newOpps });
     return NextResponse.json({ ok: true, ...result });
