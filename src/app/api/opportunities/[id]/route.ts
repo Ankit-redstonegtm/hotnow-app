@@ -7,6 +7,7 @@ import {
   getOutreachDrafts,
   getOpportunityFeedback,
 } from "@/lib/db/repo";
+import { personaMatchesTitle } from "@/lib/engine/contacts";
 import { log } from "@/lib/log";
 
 // One call that powers the opportunity detail view: the opportunity + its evidence,
@@ -67,7 +68,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
       evidence,
       contacts: contactsOut,
-      recommendedContactId: recommend(contactsOut),
+      recommendedContactId: recommend(contactsOut, Array.isArray(profile.buyer_personas) ? (profile.buyer_personas as string[]) : []),
       draftsByContactId,
       feedback,
     });
@@ -81,12 +82,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 const TIER_RANK: Record<string, number> = { P1: 0, P2: 1, P3: 2 };
 const EMAIL_RANK: Record<string, number> = { verified: 0, found: 1, unknown: 2, none: 3 };
 
-/** Best contact to lead with: highest tier, then best email status, then first. */
-function recommend(contacts: Array<{ id: string; priority: string; emailStatus: string }>): string | null {
+/**
+ * Best contact to lead with: highest tier, then persona-aligned (the seller's own buyer
+ * personas, so a field-sales seller and a pharma seller get different recommendations),
+ * then best email status.
+ */
+function recommend(contacts: Array<{ id: string; priority: string; emailStatus: string; title?: string }>, personas: string[] = []): string | null {
   if (!contacts.length) return null;
   const sorted = [...contacts].sort((a, b) => {
     const t = (TIER_RANK[a.priority] ?? 9) - (TIER_RANK[b.priority] ?? 9);
     if (t !== 0) return t;
+    const pa = personaMatchesTitle(a.title, personas) ? 0 : 1;
+    const pb = personaMatchesTitle(b.title, personas) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
     return (EMAIL_RANK[a.emailStatus] ?? 9) - (EMAIL_RANK[b.emailStatus] ?? 9);
   });
   return sorted[0].id;

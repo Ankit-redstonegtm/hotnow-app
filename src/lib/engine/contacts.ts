@@ -18,7 +18,7 @@ const DEFAULT_FUNCTIONS = ["Sales & Business Development", "Operations", "Genera
 export async function sourceContactsForCompany(
   domain: string,
   criteria: ContactCriteria = {},
-  opts: { maxPerCall?: number } = {},
+  opts: { maxPerCall?: number; personas?: string[] } = {},
 ): Promise<{ companyLinkedin: string | null; contacts: SourcedContact[] }> {
   const companyLinkedin = await domainToLinkedin(domain);
   if (!companyLinkedin) return { companyLinkedin: null, contacts: [] };
@@ -53,16 +53,55 @@ export async function sourceContactsForCompany(
     deduped.push(e);
   }
 
-  return { companyLinkedin, contacts: deduped.map((e) => ({ ...e, priority: classifyContact(e) })) };
+  return { companyLinkedin, contacts: deduped.map((e) => ({ ...e, priority: classifyContact(e, opts.personas) })) };
 }
 
-/** Tier a decision-maker: P1 = economic buyer, P2 = champion/influencer, P3 = wider team. */
-export function classifyContact(e: Pick<BlitzEmployee, "title" | "jobLevel">): "P1" | "P2" | "P3" {
+// Generic seniority/role words that don't discriminate one seller's ICP from another's -
+// excluded from persona matching so the signal comes from domain words (field, medical,
+// roofing, revenue, …), making recommendations seller-specific.
+const PERSONA_STOP = new Set([
+  "the", "and", "for", "with", "team", "teams", "lead", "leader", "head", "chief", "vice", "president",
+  "senior", "junior", "manager", "director", "officer", "staff", "member", "operations", "sales",
+  "business", "development", "general", "management", "executive", "representative", "specialist",
+]);
+
+/** Significant, discriminating tokens from the seller's buyer personas. */
+export function personaTokens(personas: string[] = []): string[] {
+  const s = new Set<string>();
+  for (const p of personas) {
+    for (const w of String(p || "").toLowerCase().split(/[^a-z]+/)) {
+      if (w.length >= 4 && !PERSONA_STOP.has(w)) s.add(w);
+    }
+  }
+  return [...s];
+}
+
+/** True if a job title aligns with any of the seller's buyer personas (domain-word match). */
+export function personaMatchesTitle(title: string | null | undefined, personas: string[] = []): boolean {
+  const t = (title || "").toLowerCase();
+  if (!t) return false;
+  return personaTokens(personas).some((tok) => t.includes(tok));
+}
+
+const P1_TITLE = /\b(chief|founder|co-?founder|owner|president|ceo|cro|cmo|cfo|coo|cto|cio|cpo|cxo|svp|evp|vp|vice president|head of|managing director|partner)\b/;
+const P2_TITLE = /\b(director|head|lead|principal|senior manager|manager|gm|general manager)\b/;
+
+/**
+ * Tier a decision-maker using the SELLER'S buyer personas, not hardcoded sales titles:
+ *  - P1: economic buyer (C-level/VP/founder), OR a persona-aligned department leader.
+ *  - P2: other department leaders, or a persona match without seniority.
+ *  - P3: everyone else.
+ * With no personas it degrades to pure seniority (backward compatible).
+ */
+export function classifyContact(e: Pick<BlitzEmployee, "title" | "jobLevel">, personas: string[] = []): "P1" | "P2" | "P3" {
   const t = `${e.title || ""}`.toLowerCase();
   const lvl = (e.jobLevel || "").toLowerCase();
-  const p1Title = /\b(chief|founder|co-?founder|owner|president|ceo|cro|cmo|cfo|coo|cto|cio|cpo|cxo|svp|evp|vp|vice president|head of|managing director|partner)\b/;
-  const p2Title = /\b(director|head|lead|principal|senior manager|manager|gm|general manager)\b/;
-  if (lvl.includes("c-team") || p1Title.test(t)) return "P1";
-  if (lvl === "vp" || lvl === "director" || p2Title.test(t)) return "P2";
+  const seniorExec = lvl.includes("c-team") || P1_TITLE.test(t);
+  const midLeader = lvl === "vp" || lvl === "director" || P2_TITLE.test(t);
+  const personaHit = personaMatchesTitle(t, personas);
+
+  if (seniorExec) return "P1";
+  if (personaHit && midLeader) return "P1"; // the persona IS a department leader → decision-maker
+  if (midLeader || personaHit) return "P2";
   return "P3";
 }

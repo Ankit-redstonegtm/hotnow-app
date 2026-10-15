@@ -16,6 +16,7 @@ export async function POST() {
     if (!profile) return NextResponse.json({ error: "no profile" }, { status: 400 });
 
     const criteria: ContactCriteria = (profile.contact_criteria as ContactCriteria) ?? {};
+    const personas: string[] = Array.isArray(profile.buyer_personas) ? (profile.buyer_personas as string[]) : [];
     const pending = await companiesNeedingContacts(sb, profile.id, BATCH);
     if (pending.length === 0) {
       return NextResponse.json({ sourced: 0, contacts: 0, remaining: 0, done: true });
@@ -25,7 +26,7 @@ export async function POST() {
     let totalContacts = 0;
     for (const c of pending) {
       try {
-        const { contacts } = await sourceContactsForCompany(c.domain, criteria);
+        const { contacts } = await sourceContactsForCompany(c.domain, criteria, { personas });
         const n = await saveContacts(admin, {
           sellerProfileId: profile.id,
           companyId: c.companyId,
