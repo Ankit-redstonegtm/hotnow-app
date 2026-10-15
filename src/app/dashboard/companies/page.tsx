@@ -1,12 +1,19 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createColumnHelper, type ColumnDef, type FilterFn } from "@tanstack/react-table";
+import { Download, Bookmark, Link2 } from "lucide-react";
 import { downloadCSV } from "@/lib/csv";
 import { ConfidenceBadge } from "@/components/ui/Badge";
 import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
+import { Button } from "@/components/ui/Button";
+import { DataWorkspace, type Facet } from "@/components/ui/DataWorkspace";
+import { SaveListDialog } from "@/components/SaveListDialog";
+import { fmtShortDate } from "@/lib/date";
 
 type Opp = {
   id: string; what_happened: string; why_it_matters: string; confidence: string; evidence_date: string | null; status: string;
+  first_discovered_at?: string | null;
   companies: { normalized_domain: string; name: string } | null;
   buying_situations: { name: string } | null;
   evidence: { source_url: string; source_date: string | null }[];
@@ -14,15 +21,20 @@ type Opp = {
 
 type Phase = "idle" | "contacts" | "emails" | "done";
 
+const CONF_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
+const col = createColumnHelper<Opp>();
+const inList: FilterFn<Opp> = (row, id, value) => !((value as string[])?.length) || (value as string[]).includes(String(row.getValue(id)));
+
+function stop(e: React.MouseEvent) { e.stopPropagation(); }
+
 export default function CompaniesPage() {
   const router = useRouter();
   const [opps, setOpps] = useState<Opp[]>([]);
-  const [sel, setSel] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const [running, setRunning] = useState(0);
   const [phase, setPhase] = useState<Phase>("idle");
   const [phaseNote, setPhaseNote] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [save, setSave] = useState<{ open: boolean; ids: string[] }>({ open: false, ids: [] });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipelineBusy = useRef(false);
 
@@ -84,25 +96,76 @@ export default function CompaniesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, opps.length, running]);
 
-  const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSel((p) => p.size === opps.length ? new Set() : new Set(opps.map((o) => o.id)));
-  const chosen = () => (sel.size ? opps.filter((o) => sel.has(o.id)) : opps);
-
-  function exportCsv() {
-    const rows = chosen().map((o) => ({
+  function exportCsv(rows: Opp[]) {
+    const data = (rows.length ? rows : opps).map((o) => ({
       company: o.companies?.name ?? "", domain: o.companies?.normalized_domain ?? "",
       signal: o.buying_situations?.name ?? "", what_happened: o.what_happened,
       why_it_matters: o.why_it_matters, confidence: o.confidence, evidence_date: o.evidence_date ?? "",
       source: o.evidence?.[0]?.source_url ?? "",
     }));
-    downloadCSV(`hotnow-companies-${new Date().toISOString().slice(0, 10)}`, rows);
-  }
-  async function saveList() {
-    const name = window.prompt("Name this list", "Hot companies"); if (!name) return;
-    const r = await fetch("/api/lists", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, kind: "companies", opportunityIds: chosen().map((o) => o.id) }) });
-    const j = await r.json(); setMsg(r.ok ? `Saved "${name}" (${j.added} companies).` : j.error);
+    downloadCSV(`hotnow-companies-${new Date().toISOString().slice(0, 10)}`, data);
   }
 
+  const facets: Facet[] = useMemo(() => {
+    const situations = Array.from(new Set(opps.map((o) => o.buying_situations?.name).filter(Boolean))) as string[];
+    return [
+      { columnId: "signal", label: "Signal", options: situations.map((s) => ({ value: s })) },
+      { columnId: "confidence", label: "Confidence", options: [{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }] },
+    ];
+  }, [opps]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const columns = useMemo<ColumnDef<Opp, any>[]>(() => [
+    col.accessor((o) => o.companies?.name || o.companies?.normalized_domain || "", {
+      id: "company", header: "Company", size: 240, enableHiding: false,
+      cell: (c) => {
+        const o = c.row.original;
+        const name = o.companies?.name || o.companies?.normalized_domain || "Unknown";
+        const domain = o.companies?.normalized_domain;
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <CompanyAvatar name={name} domain={domain} size={30} logo />
+            <div className="min-w-0 leading-tight">
+              <div className="font-semibold truncate flex items-center gap-2">{name}{o.status === "new" && <span className="chip">New</span>}</div>
+              {domain && <a href={`https://${domain}`} target="_blank" rel="noreferrer" onClick={stop} className="text-xs truncate [color:var(--faint)] hover:underline">{domain} ↗</a>}
+            </div>
+          </div>
+        );
+      },
+    }),
+    col.accessor((o) => o.buying_situations?.name ?? "", {
+      id: "signal", header: "Signal", size: 170, filterFn: inList,
+      cell: (c) => (c.getValue() ? <span className="pill">{c.getValue() as string}</span> : null),
+    }),
+    col.accessor((o) => o.what_happened, {
+      id: "whatHappened", header: "What's happening", size: 340, enableSorting: false,
+      cell: (c) => <span className="line-clamp-2 [color:var(--muted)]">{c.getValue() as string}</span>,
+    }),
+    col.accessor((o) => o.confidence, {
+      id: "confidence", header: "Confidence", size: 130, filterFn: inList,
+      sortingFn: (a, b) => (CONF_RANK[a.original.confidence] ?? 0) - (CONF_RANK[b.original.confidence] ?? 0),
+      cell: (c) => <ConfidenceBadge confidence={c.getValue() as string} />,
+    }),
+    col.accessor((o) => o.evidence?.length ?? 0, {
+      id: "evidence", header: "Evidence", size: 150,
+      cell: (c) => {
+        const ev = c.row.original.evidence ?? [];
+        if (!ev.length) return <span className="text-[13px] [color:var(--faint)]">—</span>;
+        return (
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[13px] [color:var(--muted)]"><Link2 size={13} style={{ color: "var(--faint)" }} />{ev.length}</span>
+            <a href={ev[0].source_url} target="_blank" rel="noreferrer" onClick={stop} className="text-[13px] underline [color:var(--accent-ink)]">source ↗</a>
+          </span>
+        );
+      },
+    }),
+    col.accessor((o) => o.first_discovered_at ?? o.evidence_date ?? "", {
+      id: "discovered", header: "Discovered", size: 120,
+      cell: (c) => <span className="text-[13px] [color:var(--muted)] tabular-nums">{fmtShortDate(c.getValue() as string)}</span>,
+    }),
+  ], []);
+
+  const columnLabels = { company: "Company", signal: "Signal", whatHappened: "What's happening", confidence: "Confidence", evidence: "Evidence", discovered: "Discovered" };
   const showPipeline = phase === "contacts" || phase === "emails" || phase === "done";
 
   return (
@@ -110,15 +173,15 @@ export default function CompaniesPage() {
       <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Companies</h1>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>{opps.length} companies with a reason to buy{running > 0 ? ` · ${running} search${running > 1 ? "es" : ""} running` : ""}.</p>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            {opps.length} companies with a reason to buy{running > 0 ? ` · ${running} search${running > 1 ? "es" : ""} running` : ""}.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!opps.length}>Export CSV</button>
-          <button className="btn btn-primary btn-sm" onClick={saveList} disabled={!opps.length}>Save as list</button>
+          <Button variant="secondary" size="sm" onClick={() => exportCsv(opps)} disabled={!opps.length}><Download size={14} /> Export</Button>
+          <Button variant="primary" size="sm" onClick={() => setSave({ open: true, ids: opps.map((o) => o.id) })} disabled={!opps.length}><Bookmark size={14} /> Save as list</Button>
         </div>
       </div>
-
-      {msg && <div className="card p-3 mb-4 text-sm" style={{ color: "var(--accent-ink)" }}>{msg}</div>}
 
       {running > 0 && (
         <div className="card p-3 mb-4 flex items-center gap-3">
@@ -145,53 +208,43 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {!loaded ? (
-        <div className="card p-6"><div className="skeleton h-5 w-48 rounded" /></div>
-      ) : opps.length === 0 ? (
+      {opps.length === 0 && loaded ? (
         <div className="card p-10 text-center">
           <p className="font-medium">No companies yet</p>
           <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Turn on a signal and start a search to see companies here.</p>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th style={{ width: 36 }}><input type="checkbox" checked={sel.size === opps.length && opps.length > 0} onChange={toggleAll} className="accent-[var(--accent)]" /></th>
-                <th>Company</th><th>Signal</th><th>What's happening</th><th>Confidence</th><th>Evidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {opps.map((o) => (
-                <tr
-                  key={o.id}
-                  className="cursor-pointer focus-ring"
-                  role="link"
-                  tabIndex={0}
-                  aria-label={`Open opportunity for ${o.companies?.name || o.companies?.normalized_domain || "company"}`}
-                  onClick={() => router.push(`/dashboard/companies/${o.id}`)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/dashboard/companies/${o.id}`); } }}
-                >
-                  <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggle(o.id)} className="accent-[var(--accent)]" aria-label="Select company" /></td>
-                  <td>
-                    <div className="flex items-center gap-2.5">
-                      <CompanyAvatar name={o.companies?.name || ""} domain={o.companies?.normalized_domain} size={30} />
-                      <div className="min-w-0">
-                        <div className="font-medium flex items-center gap-2">{o.companies?.name || o.companies?.normalized_domain}{o.status === "new" && <span className="chip">New</span>}</div>
-                        {o.companies?.normalized_domain && <a href={`https://${o.companies.normalized_domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs" style={{ color: "var(--faint)" }}>{o.companies.normalized_domain} ↗</a>}
-                      </div>
-                    </div>
-                  </td>
-                  <td>{o.buying_situations?.name && <span className="pill">{o.buying_situations.name}</span>}</td>
-                  <td style={{ maxWidth: 420, color: "var(--muted)" }}><div className="line-clamp-2">{o.what_happened}</div></td>
-                  <td><ConfidenceBadge confidence={o.confidence} /></td>
-                  <td>{o.evidence?.slice(0, 2).map((e, i) => <a key={i} href={e.source_url} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="block text-xs underline" style={{ color: "var(--accent-ink)" }}>source {i + 1} ↗</a>)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataWorkspace<Opp>
+          columns={columns}
+          data={opps}
+          getRowId={(o) => o.id}
+          columnLabels={columnLabels}
+          onRowClick={(o) => router.push(`/dashboard/companies/${o.id}`)}
+          searchPlaceholder="Search companies, signals…"
+          searchText={(o) => `${o.companies?.name ?? ""} ${o.companies?.normalized_domain ?? ""} ${o.buying_situations?.name ?? ""} ${o.what_happened}`}
+          facets={facets}
+          densityKey="hn_companies_density"
+          loading={!loaded}
+          initialSorting={[{ id: "confidence", desc: true }]}
+          countNoun="companies"
+          emptyTitle="No companies match"
+          emptyDescription="Try clearing a filter or your search."
+          bulkActions={({ rows, clear }) => (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => exportCsv(rows)}><Download size={14} /> Export</Button>
+              <Button variant="primary" size="sm" onClick={() => { setSave({ open: true, ids: rows.map((o) => o.id) }); clear(); }}><Bookmark size={14} /> Save to list</Button>
+            </>
+          )}
+        />
       )}
+
+      <SaveListDialog
+        open={save.open}
+        onOpenChange={(v) => setSave((s) => ({ ...s, open: v }))}
+        kind="companies"
+        ids={save.ids}
+        defaultName="Hot companies"
+      />
     </div>
   );
 }

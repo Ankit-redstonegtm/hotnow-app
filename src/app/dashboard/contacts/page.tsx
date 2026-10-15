@@ -1,8 +1,13 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createColumnHelper, type ColumnDef, type FilterFn } from "@tanstack/react-table";
+import { Download, Bookmark } from "lucide-react";
 import { downloadCSV } from "@/lib/csv";
-import { EmailStatusBadge, type EmailStatus } from "@/components/ui/Badge";
+import { EmailStatusBadge, PriorityBadge, type EmailStatus } from "@/components/ui/Badge";
 import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
+import { Button } from "@/components/ui/Button";
+import { DataWorkspace, type Facet } from "@/components/ui/DataWorkspace";
+import { SaveListDialog } from "@/components/SaveListDialog";
 
 type Contact = {
   id: string; full_name: string; title: string; linkedin_url: string; priority: string; email: string | null;
@@ -19,6 +24,10 @@ function emailStatusOf(c: Contact): EmailStatus {
   return "unknown";
 }
 
+const col = createColumnHelper<Contact>();
+const inList: FilterFn<Contact> = (row, id, value) => !((value as string[])?.length) || (value as string[]).includes(String(row.getValue(id)));
+const PRIO_RANK: Record<string, number> = { P1: 3, P2: 2, P3: 1 };
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [pending, setPending] = useState(0);
@@ -26,8 +35,7 @@ export default function ContactsPage() {
   const [loaded, setLoaded] = useState(false);
   const [working, setWorking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "P1" | "P2" | "P3">("all");
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [save, setSave] = useState<{ open: boolean; ids: string[] }>({ open: false, ids: [] });
   const auto = useRef(false);
 
   const load = useCallback(async () => {
@@ -39,7 +47,7 @@ export default function ContactsPage() {
 
   // If people still need finding, run the flow automatically the first time.
   useEffect(() => {
-    if (loaded && !auto.current && (pending > 0)) { auto.current = true; run(false); }
+    if (loaded && !auto.current && pending > 0) { auto.current = true; run(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, pending]);
 
@@ -72,24 +80,65 @@ export default function ContactsPage() {
     } finally { setWorking(false); }
   }
 
-  const shown = contacts.filter((c) => filter === "all" || c.priority === filter);
-  const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const chosen = () => (sel.size ? shown.filter((c) => sel.has(c.id)) : shown);
-
-  function exportCsv() {
-    downloadCSV(`hotnow-contacts-${new Date().toISOString().slice(0, 10)}`, chosen().map((c) => ({
+  function exportCsv(rows: Contact[]) {
+    const data = (rows.length ? rows : contacts).map((c) => ({
       name: c.full_name, title: c.title, priority: c.priority, email: c.email || "", company: c.companies?.name ?? "",
       domain: c.companies?.normalized_domain ?? "", linkedin: c.linkedin_url, job_level: c.job_level ?? "", job_function: c.job_function ?? "",
-    })));
-  }
-  async function saveList() {
-    const name = window.prompt("Name this contact list", "Decision-makers"); if (!name) return;
-    const r = await fetch("/api/lists", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, kind: "contacts", contactIds: chosen().map((c) => c.id) }) });
-    const j = await r.json(); setNote(r.ok ? `Saved "${name}" (${j.added} contacts).` : j.error);
+    }));
+    downloadCSV(`hotnow-contacts-${new Date().toISOString().slice(0, 10)}`, data);
   }
 
-  const counts = { P1: contacts.filter((c) => c.priority === "P1").length, P2: contacts.filter((c) => c.priority === "P2").length, P3: contacts.filter((c) => c.priority === "P3").length };
   const withEmail = contacts.filter((c) => c.email).length;
+
+  const facets: Facet[] = useMemo(() => [
+    { columnId: "priority", label: "Priority", options: [{ value: "P1" }, { value: "P2" }, { value: "P3" }] },
+    { columnId: "email", label: "Email", options: [{ value: "verified", label: "Verified" }, { value: "found", label: "Found" }, { value: "none", label: "None" }, { value: "unknown", label: "Unknown" }] },
+  ], []);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const columns = useMemo<ColumnDef<Contact, any>[]>(() => [
+    col.accessor((c) => c.full_name, {
+      id: "name", header: "Name", size: 210, enableHiding: false,
+      cell: (c) => (
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CompanyAvatar name={c.row.original.full_name || "?"} size={28} />
+          <span className="font-semibold truncate">{c.getValue() as string}</span>
+        </div>
+      ),
+    }),
+    col.accessor((c) => c.title, {
+      id: "title", header: "Title", size: 240,
+      cell: (c) => <span className="truncate [color:var(--muted)] block" style={{ maxWidth: 260 }}>{c.getValue() as string}</span>,
+    }),
+    col.accessor((c) => c.priority, {
+      id: "priority", header: "Priority", size: 110, filterFn: inList,
+      sortingFn: (a, b) => (PRIO_RANK[a.original.priority] ?? 0) - (PRIO_RANK[b.original.priority] ?? 0),
+      cell: (c) => (c.getValue() ? <PriorityBadge priority={c.getValue() as string} /> : <span className="pill">—</span>),
+    }),
+    col.accessor((c) => String(emailStatusOf(c) ?? "unknown"), {
+      id: "email", header: "Email", size: 170, filterFn: inList,
+      cell: (c) => {
+        const row = c.row.original;
+        return (
+          <div className="flex flex-col gap-1 items-start">
+            <EmailStatusBadge status={emailStatusOf(row)} checking={working && emailStatusOf(row) === "unknown"} />
+            {row.email && <a href={`mailto:${row.email}`} className="text-xs underline [color:var(--accent-ink)]">{row.email}</a>}
+          </div>
+        );
+      },
+    }),
+    col.accessor((c) => c.companies?.name || c.companies?.normalized_domain || "", {
+      id: "company", header: "Company", size: 180,
+      cell: (c) => <span className="truncate block">{c.getValue() as string}</span>,
+    }),
+    col.accessor((c) => c.linkedin_url, {
+      id: "linkedin", header: "LinkedIn", size: 110, enableSorting: false,
+      cell: (c) => (c.getValue() ? <a href={c.getValue() as string} target="_blank" rel="noreferrer" className="text-xs underline [color:var(--accent-ink)]">profile ↗</a> : <span className="text-xs [color:var(--faint)]">—</span>),
+    }),
+  ], [working]);
+
+  const columnLabels = { name: "Name", title: "Title", priority: "Priority", email: "Email", company: "Company", linkedin: "LinkedIn" };
+  const primaryLabel = working ? "Working…" : pending > 0 ? `Find decision-makers (${pending})` : pendingEmails > 0 ? `Find all emails (${pendingEmails})` : "All found";
 
   return (
     <div>
@@ -101,11 +150,11 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!shown.length}>Export CSV</button>
-          <button className="btn btn-ghost btn-sm" onClick={saveList} disabled={!shown.length}>Save as list</button>
-          <button className="btn btn-primary btn-sm" onClick={() => run(true)} disabled={working || (pending === 0 && pendingEmails === 0)}>
-            {working ? "Working…" : pending > 0 ? `Find decision-makers (${pending})` : pendingEmails > 0 ? `Find all emails (${pendingEmails})` : "All found"}
-          </button>
+          <Button variant="secondary" size="sm" onClick={() => exportCsv(contacts)} disabled={!contacts.length}><Download size={14} /> Export</Button>
+          <Button variant="secondary" size="sm" onClick={() => setSave({ open: true, ids: contacts.map((c) => c.id) })} disabled={!contacts.length}><Bookmark size={14} /> Save as list</Button>
+          <Button variant="primary" size="sm" onClick={() => run(true)} loading={working} disabled={working || (pending === 0 && pendingEmails === 0)}>
+            {primaryLabel}
+          </Button>
         </div>
       </div>
 
@@ -116,17 +165,7 @@ export default function ContactsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-4">
-        {(["all", "P1", "P2", "P3"] as const).map((f) => (
-          <button key={f} onClick={() => setFilter(f)} className="pill" style={filter === f ? { background: "var(--accent-soft)", color: "var(--accent-ink)", borderColor: "transparent" } : undefined}>
-            {f === "all" ? `All (${contacts.length})` : `${f} (${counts[f]})`}
-          </button>
-        ))}
-      </div>
-
-      {!loaded ? (
-        <div className="card p-6"><div className="skeleton h-5 w-48 rounded" /></div>
-      ) : contacts.length === 0 ? (
+      {loaded && contacts.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="font-medium">No contacts yet</p>
           <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
@@ -134,30 +173,36 @@ export default function ContactsPage() {
           </p>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="tbl">
-            <thead><tr><th style={{ width: 36 }}></th><th>Name</th><th>Title</th><th>Priority</th><th>Email</th><th>Company</th><th>LinkedIn</th></tr></thead>
-            <tbody>
-              {shown.map((c) => (
-                <tr key={c.id}>
-                  <td><input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} className="accent-[var(--accent)]" /></td>
-                  <td className="font-medium"><div className="flex items-center gap-2.5"><CompanyAvatar name={c.full_name || "?"} size={28} /><span>{c.full_name}</span></div></td>
-                  <td style={{ color: "var(--muted)", maxWidth: 280 }} className="truncate">{c.title}</td>
-                  <td>{c.priority ? <span className={`pill pill-${c.priority.toLowerCase()}`}>{c.priority}</span> : <span className="pill">—</span>}</td>
-                  <td>
-                    <div className="flex flex-col gap-1 items-start">
-                      <EmailStatusBadge status={emailStatusOf(c)} checking={working && emailStatusOf(c) === "unknown"} />
-                      {c.email && <a href={`mailto:${c.email}`} className="text-xs underline" style={{ color: "var(--accent-ink)" }}>{c.email}</a>}
-                    </div>
-                  </td>
-                  <td>{c.companies?.name || c.companies?.normalized_domain}</td>
-                  <td>{c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "var(--accent-ink)" }}>profile ↗</a>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataWorkspace<Contact>
+          columns={columns}
+          data={contacts}
+          getRowId={(c) => c.id}
+          columnLabels={columnLabels}
+          searchPlaceholder="Search people, titles, companies…"
+          searchText={(c) => `${c.full_name} ${c.title} ${c.companies?.name ?? ""} ${c.email ?? ""}`}
+          facets={facets}
+          densityKey="hn_contacts_density"
+          loading={!loaded}
+          initialSorting={[{ id: "priority", desc: true }]}
+          countNoun="contacts"
+          emptyTitle="No contacts match"
+          emptyDescription="Try a different priority, email status, or search."
+          bulkActions={({ rows, clear }) => (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => exportCsv(rows)}><Download size={14} /> Export</Button>
+              <Button variant="primary" size="sm" onClick={() => { setSave({ open: true, ids: rows.map((c) => c.id) }); clear(); }}><Bookmark size={14} /> Save to list</Button>
+            </>
+          )}
+        />
       )}
+
+      <SaveListDialog
+        open={save.open}
+        onOpenChange={(v) => setSave((s) => ({ ...s, open: v }))}
+        kind="contacts"
+        ids={save.ids}
+        defaultName="Decision-makers"
+      />
     </div>
   );
 }

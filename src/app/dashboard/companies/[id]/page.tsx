@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 import { useToast } from "@/components/ui/Toast";
 import OutreachPanel, { type OutreachContact, type OutreachContent } from "@/components/OutreachPanel";
+import { fmtLongDate } from "@/lib/date";
 
 type Feedback = { verdict: "useful" | "not_relevant"; reason: string | null; updated_at: string } | null;
 
@@ -39,12 +40,7 @@ type Detail = {
   feedback?: Feedback;
 };
 
-function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
+const fmtDate = fmtLongDate;
 
 export default function OpportunityDetailPage() {
   const params = useParams<{ id: string }>();
