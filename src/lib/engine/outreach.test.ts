@@ -94,4 +94,18 @@ describe("outreach prompt grounding (Step 6A compatibility)", () => {
     const prompt: string = reasonWithSchema.mock.calls[0][0].prompt;
     expect(prompt).not.toContain("Value proposition:"); // omitted cleanly when absent
   });
+
+  it("applies Eric's RedstoneGTM framework in the system prompt, with grounding preserved", async () => {
+    reasonWithSchema.mockResolvedValue(ok);
+    await generateOutreach(input);
+    const system: string = reasonWithSchema.mock.calls[0][0].system;
+    // Eric's framework markers
+    expect(system).toMatch(/Eric's RedstoneGTM/i);
+    expect(system).toMatch(/2[–-]4 words/); // subject-line rule
+    expect(system).toContain("Specifically, I think it could help you"); // Standard Sequence structure
+    expect(system).toMatch(/different value proposition/i); // follow-up rule
+    // guardrails still override the framework
+    expect(system).toMatch(/NEVER invent/i);
+    expect(system).toMatch(/INFERENCE, not a fact/i);
+  });
 });
