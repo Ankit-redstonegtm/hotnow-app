@@ -2,6 +2,8 @@
 // Wraps Task API (seller research, verification), FindAll (discovery), Search (fallback).
 // All field extraction is defensive: FindAll is beta and response shapes drift.
 
+import { discoveryWebhookUrl } from "../parallel-webhook";
+export function isTransientParallelError(error: unknown): boolean { return error instanceof TypeError || (error instanceof Error && /fetch failed|timeout|timed out|ECONN|ENOTFOUND|-> (408|429|5\d\d)/i.test(error.message)); }
 import { LIMITS } from "../engine/config";
 import type { Candidate, Basis, Citation, Generator, MatchCondition } from "../engine/types";
 
@@ -86,6 +88,7 @@ export async function taskCreate(opts: {
     input: opts.input,
     task_spec: { output_schema: { type: "json", json_schema: opts.jsonSchema } },
     processor: opts.processor ?? "core",
+    ...(discoveryWebhookUrl() ? { webhook: { url: discoveryWebhookUrl(), event_types: ["task_run.status"] } } : {}),
   });
   const runId = created.run_id || created.id || created.task_run?.run_id;
   if (!runId) throw new Error(`Task create: no run id in ${JSON.stringify(created).slice(0, 300)}`);
@@ -101,7 +104,7 @@ export async function taskCreate(opts: {
 export async function taskCheck<T = any>(
   runId: string,
 ): Promise<{ done: boolean; failed: boolean; content?: T; basis?: Basis[] }> {
-  const status = await call<any>("GET", `/v1/tasks/runs/${runId}`, undefined, 20000).catch(() => ({}));
+  const status = await call<any>("GET", `/v1/tasks/runs/${runId}`, undefined, 20000);
   const s = String(status.status || status.run?.status || status.state || "");
   if (/failed|error|cancel|expired/i.test(s)) return { done: false, failed: true };
   if (!/completed|succeeded|success|finished|done/i.test(s)) {
@@ -139,10 +142,10 @@ export async function findAllCreate(opts: {
   };
   if (opts.webhookUrl) {
     // event_types is REQUIRED by the FindAll webhook API. We subscribe to the
-    // terminal events only; per-candidate events would be far noisier.
+    // candidate and terminal events for activity updates.
     body.webhook = {
       url: opts.webhookUrl,
-      event_types: ["findall.run.completed", "findall.run.failed", "findall.run.cancelled"],
+      event_types: ["findall.candidate.generated", "findall.candidate.matched", "findall.candidate.enriched", "findall.run.completed", "findall.run.failed", "findall.run.cancelled"],
     };
   }
   const created = await call<any>("POST", "/v1beta/findall/runs", body);
@@ -161,8 +164,8 @@ export interface FindAllStatus {
   raw: unknown;
 }
 
-export async function findAllStatus(runId: string): Promise<FindAllStatus> {
-  const s = await call<any>("GET", `/v1beta/findall/runs/${runId}`);
+export async function findAllStatus(runId: string, timeoutMs = 20000): Promise<FindAllStatus> {
+  const s = await call<any>("GET", `/v1beta/findall/runs/${runId}`, undefined, timeoutMs);
   const st = s.status || s;
   const metrics = st.metrics || s.metrics || {};
   const statusStr = String(st.status || s.state || "");

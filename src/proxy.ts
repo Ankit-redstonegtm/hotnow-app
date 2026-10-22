@@ -2,7 +2,16 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DB_SCHEMA } from "./lib/supabase/schema";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
+  // Container liveness must not depend on credentials or external services.
+  if (request.nextUrl.pathname === "/api/health") return NextResponse.next();
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Cloud setup required. Open /setup and configure .env.local." }, { status: 503 });
+    }
+    if (request.nextUrl.pathname !== "/setup") return NextResponse.redirect(new URL("/setup", request.url));
+    return NextResponse.next();
+  }
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

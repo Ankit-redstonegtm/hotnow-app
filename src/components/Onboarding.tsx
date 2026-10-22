@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { apiFetch, apiJson, selectWorkspace } from "@/lib/workspace";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/TopBar";
 
@@ -34,6 +36,9 @@ const FUNCTIONS = ["Sales & Business Development", "Operations", "Advertising & 
 
 export default function Onboarding() {
   const router = useRouter();
+  const mounted = useRef(true);
+  const [canExplore, setCanExplore] = useState(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [step, setStep] = useState<Step>("domain");
   const [busy, setBusy] = useState(false);
   const [busyMsg, setBusyMsg] = useState("");
@@ -61,10 +66,11 @@ export default function Onboarding() {
   // re-researching. Keeps the setup picking up where they left off.
   useEffect(() => {
     (async () => {
+      if (new URLSearchParams(window.location.search).get("new") === "1") return;
       try {
         const [sr, situ] = await Promise.all([
-          fetch("/api/seller").then((r) => r.json()),
-          fetch("/api/situations").then((r) => r.json()),
+          apiFetch("/api/seller").then((r) => r.json()),
+          apiFetch("/api/situations").then((r) => r.json()),
         ]);
         const p = sr.profile;
         if (!p) {
@@ -81,6 +87,24 @@ export default function Onboarding() {
           } catch { /* no-op */ }
           return;
         }
+        selectWorkspace(p.id); setCanExplore(true);
+        if (!["queued", "starting", "running", "ready"].includes(p.research_status) && !p.company_name) {
+          setDomain(p.domain ?? "");
+          return;
+        }
+        if (["queued", "starting", "running", "ready"].includes(p.research_status)) {
+          setDomain(p.domain ?? ""); setBusy(true);
+          try {
+            const done = await pollUntilDone("/api/seller/research/status", 90);
+            const pr = done.profile;
+            setProfile({ company_name: pr.companyName, product_description: pr.productDescription,
+              target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
+              buyer_personas: pr.buyerPersonas, industries: pr.industries });
+            await loadOrGenerateSituations();
+            setStep("studio");
+          } catch (e) { setError(msg(e)); } finally { setBusy(false); }
+          return;
+        }
         setProfile({
           company_name: p.company_name, product_description: p.product_description,
           target_customers: p.target_customers, problems_solved: p.problems_solved,
@@ -88,9 +112,14 @@ export default function Onboarding() {
         });
         setDomain(p.domain ?? "");
         if (situ.situations?.length) setSituations(situ.situations);
+        else {
+          setBusy(true);
+          try { await loadOrGenerateSituations(); }
+          finally { setBusy(false); }
+        }
         const [icp, settings] = await Promise.all([
-          fetch("/api/icp").then((r) => r.json()).catch(() => ({})),
-          fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
+          apiFetch("/api/icp").then((r) => r.json()).catch(() => ({})),
+          apiFetch("/api/settings").then((r) => r.json()).catch(() => ({})),
         ]);
         const i = icp.icp;
         if (i) {
@@ -111,11 +140,9 @@ export default function Onboarding() {
     })();
   }, []);
 
-  function cycleMsgs(msgs: string[]) {
-    let i = 0;
-    setBusyMsg(msgs[0]);
-    const t = setInterval(() => { i = (i + 1) % msgs.length; setBusyMsg(msgs[i]); }, 2600);
-    return () => clearInterval(t);
+  function cycleMsgs(_msgs: string[]) {
+    setBusyMsg("Researching your company with Parallel");
+    return () => {};
   }
 
   async function research(e: React.FormEvent) {
@@ -129,13 +156,14 @@ export default function Onboarding() {
     setBusy(true); setError(null);
     const stop = cycleMsgs(RESEARCH_MSGS);
     try {
-      const res = await fetch("/api/seller/research", {
+      const res = await apiFetch("/api/seller/research", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ domain: d, description: desc || undefined }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "We could not research that domain. Please check it and try again.");
 
+      selectWorkspace(j.profileId); setCanExplore(true);
       const p = await pollUntilDone("/api/seller/research/status", 90);
       const pr = p.profile;
       setProfile(pr ? {
@@ -145,7 +173,7 @@ export default function Onboarding() {
       } : null);
       if (pr?.industries?.length) setIndustries(pr.industries.join(", "));
 
-      await fetch("/api/seller", {
+      await apiJson("/api/seller", {
         method: "PATCH", headers: { "content-type": "application/json" },
         body: JSON.stringify(pr ? {
           company_name: pr.companyName, product_description: pr.productDescription,
@@ -160,10 +188,10 @@ export default function Onboarding() {
   }
 
   async function loadOrGenerateSituations() {
-    const existing = await fetch("/api/situations").then((r) => r.json());
+    const existing = await apiFetch("/api/situations").then((r) => r.json());
     if (existing.situations?.length) { setSituations(existing.situations); return; }
     setBusyMsg("Finding the moments that create demand");
-    const res = await fetch("/api/situations", { method: "POST" });
+    const res = await apiFetch("/api/situations", { method: "POST" });
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || "We could not map your buying signals. Please try again.");
     if (j.status === "done" && j.situations) { setSituations(j.situations); return; }
@@ -174,8 +202,9 @@ export default function Onboarding() {
   async function pollUntilDone(url: string, maxTries: number): Promise<any> {
     for (let i = 0; i < maxTries; i++) {
       await new Promise((r) => setTimeout(r, 5000));
+      if (!mounted.current) throw new Error("Page closed; background work continues");
       try {
-        const res = await fetch(url);
+        const res = await apiFetch(url);
         const text = await res.text();
         let j: any;
         try { j = JSON.parse(text); } catch { continue; }
@@ -190,14 +219,14 @@ export default function Onboarding() {
 
   async function patchSituation(id: string, fields: Partial<Situation>) {
     setSituations((prev) => prev.map((s) => (s.id === id ? { ...s, ...fields } : s)));
-    await fetch("/api/situations", {
+    await apiFetch("/api/situations", {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, ...fields }),
     });
   }
 
   async function addCustomSituation(ns: { name: string; description: string; objective: string }) {
-    const res = await fetch("/api/situations/custom", {
+    const res = await apiFetch("/api/situations/custom", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(ns),
     });
@@ -212,13 +241,13 @@ export default function Onboarding() {
     setLaunching(true); setError(null);
     try {
       if (profile) {
-        await fetch("/api/seller", {
+        await apiFetch("/api/seller", {
           method: "PATCH", headers: { "content-type": "application/json" },
           body: JSON.stringify(profile),
         });
       }
       const size = SIZE_RANGES[sizeIdx];
-      await fetch("/api/icp", {
+      await apiJson("/api/icp", {
         method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify({
           geographies: splitList(geographies),
@@ -228,11 +257,11 @@ export default function Onboarding() {
           dailyTarget: perSignal,
         }),
       });
-      await fetch("/api/settings", {
+      await apiJson("/api/settings", {
         method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify({ contactCriteria: { jobLevels: levels, jobFunctions: functions } }),
       });
-      const res = await fetch("/api/discovery/start?max=2", { method: "POST" });
+      const res = await apiFetch("/api/discovery/start?max=2", { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "We could not start the search. Please try again.");
       router.push("/dashboard/companies?justStarted=1");
@@ -249,7 +278,8 @@ export default function Onboarding() {
         <div className="flex-1 flex items-center justify-center px-5 py-10">
           <div className="w-full max-w-xl">
             {busy ? (
-              <ResearchLoader msg={busyMsg} />
+              <><ResearchLoader msg={busyMsg} />
+              {canExplore && <div className="text-center mt-4"><Link href="/dashboard#parallel-activity" className="btn btn-primary">Continue in dashboard</Link><p className="text-xs mt-2" style={{ color: "var(--muted)" }}>Your research continues in the background. Return to setup when it finishes.</p></div>}</>
             ) : (
               <div className="text-center">
                 <span className="chip mb-5">Set up in under a minute</span>

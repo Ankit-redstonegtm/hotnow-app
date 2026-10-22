@@ -1,3 +1,4 @@
+import { icpInput, inputError } from "@/lib/validation";
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { getSellerProfileByUser, getIcp, upsertIcp } from "@/lib/db/repo";
@@ -20,15 +21,7 @@ export async function PUT(req: Request) {
     const { sb, user } = await requireUser();
     const profile = await getSellerProfileByUser(sb, user.id);
     if (!profile) return NextResponse.json({ error: "no profile" }, { status: 400 });
-    const b = await req.json();
-    const icp: IcpConstraints = {
-      geographies: b.geographies ?? [],
-      industries: b.industries ?? [],
-      excludedIndustries: b.excludedIndustries ?? [],
-      sizeMin: b.sizeMin ?? null,
-      sizeMax: b.sizeMax ?? null,
-      dailyTarget: b.dailyTarget ?? 5,
-    };
+    const icp = icpInput.parse(await req.json());
     await upsertIcp(sb, profile.id, icp);
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -37,6 +30,7 @@ export async function PUT(req: Request) {
 }
 
 function handle(e: unknown) {
+  const invalid = inputError(e); if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
   if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });
 }

@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HotNow
 
-## Getting Started
+B2B opportunity discovery with evidence, buying signals, contact sourcing, saved
+lists, CSV exports, and optional Slack notifications.
 
-First, run the development server:
+Start here: [Local and cloud setup](LOCAL_SETUP.md).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+For a guide to the database, authentication, authorization, API keys, and
+containers, read [Architecture](ARCHITECTURE.md). To run the app in Docker, follow
+[Docker setup](DOCKER.md).
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-local.ps1
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. The frontend and backend use one Next.js server.
+The launcher also starts a background worker for research, signals, and discovery.
+Overview shows saved task progress through a shared AG-UI event stream, and work continues when
+you navigate away or close the browser. Docker Compose starts both services.
+Fill `.env.local` to connect Supabase cloud, Parallel AI, and Blitz. Until then,
+the app shows a setup screen. Never commit credentials.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Each user can save multiple seller domains and switch company workspaces from
+the sidebar. Profiles, signals, targeting, opportunities, contacts, and lists
+belong to their workspace. Data is persisted in Supabase's `hotnow` schema.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The database baseline is [001_hotnow.sql](supabase/migrations/001_hotnow.sql).
+Apply it to a new Supabase project, then expose `hotnow` in Data API settings.
+The private trigger schema must stay unexposed. For existing installations, apply
+[002_background_jobs.sql](supabase/migrations/002_background_jobs.sql) to enable
+durable contact/email enrichment, task cancellation, retries and crash recovery.
 
-## Learn More
+## Checks
 
-To learn more about Next.js, take a look at the following resources:
+With Node/npm installed:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+npm install
+npm run typecheck
+npm run test:db
+npm run test:background
+node scripts/test-reliability.mjs
+npm run check:cloud
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`pnpm-lock.yaml` is the canonical lockfile. With pnpm installed, use
+`pnpm install --frozen-lockfile` for reproducible dependencies. The scripts use
+Webpack for compatibility with Windows. Font styling uses system fonts so
+builds do not need to download Google Fonts.
 
-## Deploy on Vercel
+`test:db` runs local PostgreSQL schema and access-control checks without cloud
+keys. `check:cloud` checks configured keys and Supabase tables without making
+paid research calls. Live Supabase authentication, provider integrations, and
+multi-user throughput must be verified after account configuration.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+To check the running dashboard APIs against Supabase using temporary test users
+and synthetic records, run `node scripts/test-api.mjs --allow-cloud-test-writes`.
+This checks Overview, Companies, Contacts, Lists, authentication, and workspace
+isolation. It removes its own test users/records afterward and makes no research,
+contact-provider, or Slack calls. The default app URL is `http://127.0.0.1:3001`;
+set `HOTNOW_TEST_URL` to test another local deployment.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Public hosting also needs the always-on worker described in [DEPLOY.md](DEPLOY.md). See
+[GOOGLE_AUTH_SETUP.md](GOOGLE_AUTH_SETUP.md) for optional Google sign-in.
+Automatic scheduled discovery is not configured; users launch searches manually.
+
+For deep browser journeys, stop the worker before enabling synthetic queue
+mutations. This opt-in check creates temporary users and removes its own records:
+
+```powershell
+docker compose --env-file .env.local stop worker
+try {
+  node scripts/test-api.mjs --allow-cloud-test-writes --worker-paused --browser
+} finally {
+  docker compose --env-file .env.local start worker
+}
+```
+
+The browser check covers saved criteria, errors, list creation, signal toggles,
+mobile layout, AG-UI reconnection, task controls and login/logout. It requires
+Microsoft Edge at the configured Windows path in the test helper. The default
+API-only test does not require a browser or pausing the worker.
+
+`node scripts/test-reliability.mjs` tests retry/cancellation, stale leases,
+validation, safe exports and evidence repair entirely offline. The optional
+`node scripts/test-signup.mjs --allow-cloud-test-writes` exercises public signup
+with one temporary account and blocks research/provider calls.
+
+`node scripts/test-blitz.mjs` checks the contact provider contract offline,
+including country filter arrays and titles from the searched company's current
+employment. `node --env-file=.env.local scripts/test-blitz.mjs --live` also
+resolves `hsbc.com` and fetches at most two contacts using the configured Blitz
+key. The live check uses provider credits, fetches no emails and writes no data.

@@ -1,5 +1,6 @@
 import { createClient as createSbClient, SupabaseClient } from "@supabase/supabase-js";
 import { DB_SCHEMA } from "./schema";
+import { cloudFetch } from "./fetch";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = SupabaseClient<any, any, any, any, any>;
@@ -16,6 +17,7 @@ export function createAdminClient(): AnyClient {
   if (!admin) {
     admin = createSbClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
       db: { schema: DB_SCHEMA },
+      global: { fetch: cloudFetch },
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }

@@ -1,0 +1,51 @@
+services:
+  app:
+    image: hotnow-app:local
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_HOTNOW_DB_SCHEMA: ${NEXT_PUBLIC_HOTNOW_DB_SCHEMA:-hotnow}
+    env_file:
+      - .env.local
+    environment:
+      # Overrides the native development URL only inside the container.
+      APP_URL: ${DOCKER_APP_URL:-http://localhost:3001}
+      HOTNOW_DB_SCHEMA: ${NEXT_PUBLIC_HOTNOW_DB_SCHEMA:-hotnow}
+    ports:
+      - "127.0.0.1:${HOTNOW_PORT:-3001}:3000"
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    image: hotnow-app:local
+    command: ["node", "background-worker.cjs"]
+    env_file:
+      - .env.local
+    environment:
+      APP_URL: ${DOCKER_APP_URL:-http://localhost:3001}
+      HOTNOW_DB_SCHEMA: ${NEXT_PUBLIC_HOTNOW_DB_SCHEMA:-hotnow}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');process.exit(Date.now()-fs.statSync('/tmp/hotnow-worker-heartbeat').mtimeMs<90000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

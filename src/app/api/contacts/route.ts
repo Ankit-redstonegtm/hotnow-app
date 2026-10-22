@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const { sb, user } = await requireUser();
     const profile = await getSellerProfileByUser(sb, user.id);
-    if (!profile) return NextResponse.json({ contacts: [], pending: 0, pendingEmails: 0, pendingPriorityEmails: 0 });
+    if (!profile) return NextResponse.json({ error: "Select or set up a company first." }, { status: 404 });
     const [contacts, pending, pendingPriorityEmails, pendingEmails] = await Promise.all([
       getContacts(sb, profile.id),
       countCompaniesNeedingContacts(sb, profile.id),

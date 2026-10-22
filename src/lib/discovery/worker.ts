@@ -1,8 +1,7 @@
-// Shared discovery ingest + notification worker.
-// Used by BOTH the in-session poll route (/api/discovery/poll) and the
-// background webhook route (/api/discovery/webhook) so the two paths can never
-// diverge. All writes go through the admin (service-role) client because the
-// webhook path has no user session.
+import { validSlackUrl } from "@/lib/validation";
+import { appBaseUrl } from "@/lib/parallel-webhook";
+import { isTransientParallelError } from "@/lib/providers/parallel";
+// Result ingestion and notification helpers for the dedicated worker.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -50,12 +49,31 @@ export function toSituation(s: any): BuyingSituation {
 /**
  * Ingest one discovery run if (and only if) it has reached a terminal state.
  * Idempotent-safe to call repeatedly: if the provider run is still active it
- * returns { status: "running" } and writes nothing.
+ * persists cumulative counters and returns running.
  */
 export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation): Promise<IngestResult> {
   try {
+    // The launcher reserves a DB row before calling the provider.
+    if (run.status === "queued") {
+      if (Date.now() - Date.parse(run.requested_at) > 5 * 60 * 1000) {
+        throw new Error("Discovery launch expired. Please start a new search.");
+      }
+      return { runId: run.id, status: "running" };
+    }
     const st = await discoveryStatus(run.provider_job_id);
+    await updateRun(admin, run.id, { candidates_count: st.candidatesCount, matched_count: st.matchedCount, error: null });
     if (st.isActive) return { runId: run.id, status: "running", matched: st.matchedCount };
+    if (/failed|error|cancel/i.test(st.status)) throw new Error("Parallel search " + st.status + ": " + (st.terminationReason || "No results available"));
+
+    // Atomic lease: polling and webhooks can arrive concurrently. Only one
+    // worker ingests a finished run; a crashed worker becomes retryable.
+    const { data: claimed, error: claimError } = await admin.from("discovery_runs")
+      .update({ ingestion_claimed_until: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
+      .eq("id", run.id).in("status", ["queued", "running"])
+      .or(`ingestion_claimed_until.is.null,ingestion_claimed_until.lt.${new Date().toISOString()}`)
+      .select("id");
+    if (claimError) throw new Error(claimError.message);
+    if (!claimed?.length) return { runId: run.id, status: "running" };
 
     const { candidates } = await discoveryResult(run.provider_job_id);
 
@@ -91,6 +109,10 @@ export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation
     return { runId: run.id, status: "completed", matched, newOpps };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "ingest error";
+    if (isTransientParallelError(err)) {
+      await updateRun(admin, run.id, { ingestion_claimed_until: null, error: "Connection interrupted; retrying automatically." });
+      return { runId: run.id, status: "running" };
+    }
     await updateRun(admin, run.id, { status: "failed", completed_at: new Date().toISOString(), error: msg });
     return { runId: run.id, status: "failed", error: msg };
   }
@@ -119,7 +141,10 @@ export async function notifyIfWaveComplete(admin: SB, sellerProfileId: string): 
 
   // Claim BEFORE sending so a concurrent webhook+poll don't both ping.
   const stamp = new Date().toISOString();
-  await Promise.all(unnotified.map((r: any) => updateRun(admin, r.id, { notified_at: stamp })));
+  const { data: claimed, error } = await admin.from("discovery_runs")
+    .update({ notified_at: stamp }).in("id", unnotified.map((r: any) => r.id))
+    .is("notified_at", null).select("id");
+  if (error || !claimed?.length) return;
 
   const completedRunIds = wave.filter((r: any) => r.status === "completed").map((r: any) => r.id);
   let newCount = 0;
@@ -143,6 +168,7 @@ export async function notifyIfWaveComplete(admin: SB, sellerProfileId: string): 
 
 /** POST a simple message to a Slack incoming-webhook URL. Never throws. */
 export async function notifySlack(webhookUrl: string, text: string): Promise<void> {
+  if (!validSlackUrl(webhookUrl)) return;
   try {
     await fetch(webhookUrl, {
       method: "POST",
@@ -155,18 +181,4 @@ export async function notifySlack(webhookUrl: string, text: string): Promise<voi
   }
 }
 
-/** Public base URL of the deployed app, used to build the webhook + deep links. */
-export function appBaseUrl(): string | undefined {
-  const explicit = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
-  if (explicit && /^https:\/\//.test(explicit) && !/localhost|127\.0\.0\.1/.test(explicit)) {
-    return explicit.replace(/\/+$/, "");
-  }
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return undefined;
-}
-
-/** Webhook URL to hand Parallel, or undefined when we can't be reached (local dev). */
-export function discoveryWebhookUrl(): string | undefined {
-  const base = appBaseUrl();
-  return base ? `${base}/api/discovery/webhook` : undefined;
-}
+export { appBaseUrl, discoveryWebhookUrl } from "@/lib/parallel-webhook";

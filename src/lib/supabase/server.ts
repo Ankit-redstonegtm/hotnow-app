@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { DB_SCHEMA } from "./schema";
+import { cloudFetch } from "./fetch";
 
 /** Supabase client bound to the request's auth cookies (RLS as the signed-in user). */
 export async function createClient() {
@@ -10,6 +11,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       db: { schema: DB_SCHEMA },
+      global: { fetch: cloudFetch },
       cookies: {
         getAll() {
           return cookieStore.getAll();

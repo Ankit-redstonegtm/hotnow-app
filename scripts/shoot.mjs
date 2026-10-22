@@ -2,8 +2,9 @@ import puppeteer from "puppeteer-core";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const BASE = process.argv[2] || "https://app.hotnow.co";
-const EMAIL = "demo+v2@hotnow.co";
-const PASS = "hotnow12345";
+const EMAIL = process.env.HOTNOW_TEST_EMAIL;
+const PASS = process.env.HOTNOW_TEST_PASSWORD;
+if (!EMAIL || !PASS) throw new Error("Set HOTNOW_TEST_EMAIL and HOTNOW_TEST_PASSWORD for this manual screenshot script.");
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: "new", args: ["--no-sandbox", "--hide-scrollbars"] });
 const page = await browser.newPage();

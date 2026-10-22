@@ -10,7 +10,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const profile = await getSellerProfileByUser(sb, user.id);
   if (!profile) redirect("/onboarding");
   return (
-    <AppShell companyName={profile.company_name ?? profile.domain} userEmail={user.email ?? ""}>
+    <AppShell workspaceId={profile.id} companyName={profile.company_name ?? profile.domain} companyDomain={profile.domain} userEmail={user.email ?? ""}>
       {children}
     </AppShell>
   );

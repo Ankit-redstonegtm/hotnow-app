@@ -26,12 +26,17 @@ Set these for **Production** and **Preview** (values are in your local `app/.env
 | `APP_URL` | `https://app.hotnow.co` (optional; falls back to `VERCEL_URL`) |
 | `PARALLEL_WEBHOOK_SECRET` | `whsec_...` from Parallel → Settings → Webhooks (optional) |
 
-**Background discovery (no open tab needed):** when a FindAll run finishes,
-Parallel POSTs `app.hotnow.co/api/discovery/webhook` and results ingest server-side,
-then a Slack ping (if a webhook URL is set in Settings) says how many new
-opportunities landed. This works out of the box on Vercel via `VERCEL_URL`; set
-`APP_URL` for a stable domain + nicer Slack links, and `PARALLEL_WEBHOOK_SECRET`
-to signature-verify incoming deliveries. The in-app poll still runs as a fallback.
+**Current background processing:** Vercel can host the Next.js frontend and API,
+but this version also requires a separate always-on worker. Deploy the Docker
+image on a worker-capable host with command `node background-worker.cjs`, the
+same runtime secrets and Supabase schema as the app, and `APP_URL` set to the
+public app origin. Use one worker replica. A Vercel deployment alone will leave
+jobs queued. For an app and worker on one host, use [Docker setup](DOCKER.md).
+
+The signed webhook updates task readiness and cumulative discovery counters;
+the worker retrieves results, qualifies companies, persists opportunities, and
+sends completion notifications. Configure `PARALLEL_WEBHOOK_SECRET` from
+Parallel Settings → Webhooks. Localhost uses worker checks; no open tab is needed.
 
 CLI (repeat per var, paste value when prompted):
 ```bash
@@ -65,9 +70,9 @@ Vercel issues the TLS cert automatically once DNS resolves.
   Find opportunities → dashboard fills in as discovery finishes (~5–8 min).
 
 ## Notes
-- Function durations: onboarding is async-polled, so it fits the 60s limit. The discovery
-  **poll/ingest** route is set to `maxDuration = 300`; on Hobby it's capped at 60s, which is
-  enough because each poll processes already-finished runs. No Pro plan required.
+- Research, buying-signal generation, and discovery enqueue work and return HTTP
+  202. Browser status endpoints read persisted state; provider work and ingestion
+  run in the dedicated worker rather than a long-running serverless request.
 - Daily scheduled discovery (Vercel Cron) is NOT wired yet (Phase 6). Runs are user-triggered
   from Dashboard → Manage situations.
 - Cost control: discovery defaults to FindAll `base` with per-run caps (see src/lib/engine/config.ts).
