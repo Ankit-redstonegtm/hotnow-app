@@ -72,3 +72,24 @@ Vercel issues the TLS cert automatically once DNS resolves.
   from Dashboard → Manage situations.
 - Cost control: discovery defaults to FindAll `base` with per-run caps (see src/lib/engine/config.ts).
   Signup is open — anyone who signs up can trigger real Parallel spend; keep the URL private while testing.
+
+## Background worker (contact + email enrichment)
+
+Decision-maker and email enrichment run in a separate always-on process so they continue
+when the browser tab is closed. **Vercel cannot host it**; the app on Vercel only enqueues
+and reports progress. Without the worker, enrichment jobs stay `queued`.
+
+Order matters, because the new code reads a new table:
+
+1. Back up the Supabase project (it is shared with another RedstoneGTM project).
+2. Apply `supabase/migrations/0004_background_jobs.sql` (additive; safe to re-run).
+3. Deploy the worker (below) and confirm the log line `HotNow background worker started`.
+4. Deploy the app: `vercel --prod --yes` from this directory.
+
+Worker host (Railway / Fly / Render): build `Dockerfile.worker`, run **exactly one replica**,
+and give it the same runtime secrets as the app: `SUPABASE_SERVICE_ROLE_KEY`,
+`NEXT_PUBLIC_SUPABASE_URL`, `HOTNOW_DB_SCHEMA=hotnow`, `BLITZ_API_KEY`. Locally:
+`npm run build:worker && npm run worker`.
+
+Rollback: promote the previous Vercel deployment and stop the worker. The migration only
+adds a table and a function, so nothing else depends on it.

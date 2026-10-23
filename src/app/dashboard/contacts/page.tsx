@@ -8,6 +8,7 @@ import { CompanyAvatar } from "@/components/ui/CompanyAvatar";
 import { Button } from "@/components/ui/Button";
 import { DataWorkspace, type Facet } from "@/components/ui/DataWorkspace";
 import { SaveListDialog } from "@/components/SaveListDialog";
+import { describeJob, useEnrichmentJobs } from "@/components/useEnrichmentJobs";
 
 type Contact = {
   id: string; full_name: string; title: string; linkedin_url: string; priority: string; email: string | null;
@@ -33,8 +34,6 @@ export default function ContactsPage() {
   const [pending, setPending] = useState(0);
   const [pendingEmails, setPendingEmails] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const [working, setWorking] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const [save, setSave] = useState<{ open: boolean; ids: string[] }>({ open: false, ids: [] });
   const auto = useRef(false);
 
@@ -45,39 +44,23 @@ export default function ContactsPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Enrichment runs in the background worker; this page starts it and shows progress.
+  const jobs = useEnrichmentJobs(load);
+  const working = !!jobs.active;
+  const note = jobs.error ?? (jobs.active ? describeJob(jobs.active)
+    : jobs.last?.status === "failed" || jobs.last?.status === "cancelled" ? describeJob(jobs.last)
+    : jobs.last?.status === "completed" && pending === 0 && pendingEmails === 0 ? "Everyone is ready." : null);
+
   // If people still need finding, run the flow automatically the first time.
   useEffect(() => {
-    if (loaded && !auto.current && pending > 0) { auto.current = true; run(false); }
+    if (loaded && !auto.current && pending > 0 && !jobs.active && jobs.last?.status !== "failed") { auto.current = true; run(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, pending]);
+  }, [loaded, pending, jobs.last?.status]);
 
-  // run the flow: find decision-makers, then work emails.
-  async function run(allEmails: boolean) {
+  // Queue the flow: find decision-makers, then work emails. Safe to call twice (idempotent).
+  function run(allEmails: boolean) {
     if (working) return;
-    setWorking(true);
-    try {
-      if (pending > 0) {
-        setNote("Finding the decision-makers at each company");
-        for (let i = 0; i < 60; i++) {
-          const j = await fetch("/api/contacts/source", { method: "POST" }).then((r) => r.json());
-          if (j.error) { setNote(j.error); setWorking(false); return; }
-          await load();
-          if (j.done || (j.remaining ?? 0) === 0) break;
-          setNote(`Finding decision-makers · ${j.remaining} companies to go`);
-          await new Promise((r) => setTimeout(r, 900));
-        }
-      }
-      setNote("Finding work emails");
-      for (let i = 0; i < 80; i++) {
-        const j = await fetch("/api/contacts/enrich", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(allEmails ? { all: true } : {}) }).then((r) => r.json());
-        if (j.error) { setNote(j.error); break; }
-        await load();
-        if (j.done || (j.remaining ?? 0) === 0) break;
-        setNote(`Finding emails · ${j.remaining} to go`);
-        await new Promise((r) => setTimeout(r, 700));
-      }
-      setNote("Everyone is ready.");
-    } finally { setWorking(false); }
+    void jobs.start(allEmails);
   }
 
   function exportCsv(rows: Contact[]) {
@@ -162,6 +145,7 @@ export default function ContactsPage() {
         <div className="card p-3 mb-4 flex items-center gap-3">
           {working && <span className="spin inline-block h-4 w-4 rounded-full border-2" style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} />}
           <span className="text-sm" style={{ color: "var(--accent-ink)" }}>{note}</span>
+          {working && <Button variant="secondary" size="sm" className="ml-auto" onClick={() => void jobs.cancel()}>Stop</Button>}
         </div>
       )}
 

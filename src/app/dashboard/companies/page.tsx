@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { DataWorkspace, type Facet } from "@/components/ui/DataWorkspace";
 import { SaveListDialog } from "@/components/SaveListDialog";
 import { fmtShortDate } from "@/lib/date";
+import { describeJob, useEnrichmentJobs } from "@/components/useEnrichmentJobs";
 
 type Opp = {
   id: string; what_happened: string; why_it_matters: string; confidence: string; evidence_date: string | null; status: string;
@@ -18,8 +19,6 @@ type Opp = {
   buying_situations: { name: string } | null;
   evidence: { source_url: string; source_date: string | null }[];
 };
-
-type Phase = "idle" | "contacts" | "emails" | "done";
 
 const CONF_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
 const col = createColumnHelper<Opp>();
@@ -32,50 +31,13 @@ export default function CompaniesPage() {
   const [opps, setOpps] = useState<Opp[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [running, setRunning] = useState(0);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [phaseNote, setPhaseNote] = useState("");
   const [save, setSave] = useState<{ open: boolean; ids: string[] }>({ open: false, ids: [] });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pipelineBusy = useRef(false);
+  const autoStarted = useRef(false);
 
   const load = useCallback(async () => {
     const j = await fetch("/api/opportunities").then((r) => r.json());
     setOpps(j.opportunities ?? []); setLoaded(true);
-  }, []);
-
-  // Once companies exist, find their decision-makers and verified emails automatically.
-  const runPipeline = useCallback(async () => {
-    if (pipelineBusy.current) return;
-    const status = await fetch("/api/contacts").then((r) => r.json()).catch(() => null);
-    if (!status) return;
-    const needContacts = (status.pending ?? 0) > 0;
-    const needEmails = (status.pendingPriorityEmails ?? 0) > 0;
-    if (!needContacts && !needEmails) { setPhase((p) => (p === "idle" ? "idle" : "done")); return; }
-
-    pipelineBusy.current = true;
-    try {
-      if (needContacts) {
-        setPhase("contacts"); setPhaseNote("Finding the decision-makers at each company");
-        for (let i = 0; i < 60; i++) {
-          const j = await fetch("/api/contacts/source", { method: "POST" }).then((r) => r.json());
-          if (j.error) break;
-          if (j.done || (j.remaining ?? 0) === 0) break;
-          setPhaseNote(`Finding decision-makers · ${j.remaining} companies to go`);
-          await new Promise((r) => setTimeout(r, 900));
-        }
-      }
-      setPhase("emails"); setPhaseNote("Finding work emails for your top people");
-      for (let i = 0; i < 60; i++) {
-        const j = await fetch("/api/contacts/enrich", { method: "POST" }).then((r) => r.json());
-        if (j.error) break;
-        if (j.done || (j.remaining ?? 0) === 0) break;
-        setPhaseNote(`Finding emails · ${j.remaining} to go`);
-        await new Promise((r) => setTimeout(r, 700));
-      }
-      setPhase("done"); setPhaseNote("Decision-makers and emails are ready on the Contacts tab");
-    } finally {
-      pipelineBusy.current = false;
-    }
   }, []);
 
   const poll = useCallback(async () => {
@@ -90,11 +52,19 @@ export default function CompaniesPage() {
 
   useEffect(() => { load(); poll(); return () => { if (timer.current) clearTimeout(timer.current); }; }, [load, poll]);
 
-  // Kick the contact + email pipeline whenever we have companies and nothing is in flight.
+  // Once companies exist, queue decision-makers and emails. The background worker does the
+  // work, so it continues if this tab is closed. The server ignores a repeat while one is active.
+  const jobs = useEnrichmentJobs();
+  const phase: "idle" | "contacts" | "emails" | "done" = jobs.active ? jobs.active.kind : jobs.last?.status === "completed" ? "done" : "idle";
+  const phaseNote = jobs.active ? describeJob(jobs.active)
+    : jobs.last?.status === "completed" ? "Decision-makers and emails are ready on the Contacts tab" : "";
   useEffect(() => {
-    if (loaded && opps.length > 0 && !pipelineBusy.current) runPipeline();
+    if (!loaded || opps.length === 0 || autoStarted.current || jobs.active) return;
+    if (jobs.last?.status === "failed" || jobs.error) return; // do not retry a failing task in a loop
+    autoStarted.current = true;
+    void jobs.start(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, opps.length, running]);
+  }, [loaded, opps.length, jobs.active, jobs.last?.status, jobs.error]);
 
   function exportCsv(rows: Opp[]) {
     const data = (rows.length ? rows : opps).map((o) => ({

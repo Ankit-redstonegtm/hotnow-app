@@ -27,19 +27,22 @@ export async function sourceContactsForCompany(
   const functions = criteria.jobFunctions?.length ? criteria.jobFunctions : DEFAULT_FUNCTIONS;
 
   // Call A: C-Team (no function filter) - founders/CxO regardless of tagged function.
-  // Call B: senior leaders in the target functions.
-  const calls: Promise<{ employees: BlitzEmployee[] }>[] = [
-    employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: ["C-Team"], countryCode: criteria.countryCode, maxResults: max }),
-    employeeFinder({
-      companyLinkedinUrl: companyLinkedin,
-      jobLevel: criteria.jobLevels?.length ? criteria.jobLevels : ["VP", "Director"],
-      jobFunction: functions,
-      countryCode: criteria.countryCode,
-      maxResults: max,
-    }),
-  ];
+  // Call B: senior leaders in the target functions. Criteria levels are split between the
+  // two so a chosen "C-Team" is never sent to the function-filtered call.
+  const levels = criteria.jobLevels?.length ? criteria.jobLevels : ["C-Team", "VP", "Director"];
+  const calls: Promise<{ employees: BlitzEmployee[] }>[] = [];
+  if (levels.includes("C-Team")) {
+    calls.push(employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: ["C-Team"], countryCode: criteria.countryCode, maxResults: max }));
+  }
+  const seniorLevels = levels.filter((level) => level !== "C-Team");
+  if (seniorLevels.length) {
+    calls.push(employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: seniorLevels, jobFunction: functions, countryCode: criteria.countryCode, maxResults: max }));
+  }
 
   const settled = await Promise.allSettled(calls);
+  // A failed search must not look like "this company has no contacts": surface it so it is retried.
+  const failure = settled.find((r) => r.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
   const all: BlitzEmployee[] = [];
   for (const s of settled) if (s.status === "fulfilled") all.push(...s.value.employees);
 
