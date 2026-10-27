@@ -1,5 +1,8 @@
 "use client";
+import ActivityProvider from "./ActivityProvider";
 import Link from "next/link";
+import ParallelActivity from "./ParallelActivity";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -29,10 +32,14 @@ const NAV: { group?: string; items: { label: string; href: string; icon: keyof t
 export default function AppShell({
   children,
   companyName,
+  companyDomain,
+  workspaceId,
   userEmail,
 }: {
   children: React.ReactNode;
   companyName: string;
+  companyDomain: string;
+  workspaceId: string;
   userEmail: string;
 }) {
   const pathname = usePathname();
@@ -40,6 +47,7 @@ export default function AppShell({
   const [open, setOpen] = useState(false);
 
   async function signOut() {
+    sessionStorage.removeItem("hotnow_workspace");
     await createClient().auth.signOut();
     router.push("/login");
     router.refresh();
@@ -49,7 +57,7 @@ export default function AppShell({
     href === "/dashboard" ? pathname === "/dashboard" : pathname?.startsWith(href);
 
   return (
-    <div className="min-h-dvh flex">
+    <ActivityProvider workspaceId={workspaceId}><div className="min-h-dvh flex">
       {/* sidebar */}
       <aside
         className="fixed z-30 inset-y-0 left-0 flex flex-col border-r bg-[var(--surface)] transition-transform md:translate-x-0"
@@ -64,6 +72,7 @@ export default function AppShell({
           <span className="inline-grid place-items-center h-7 w-7 rounded-lg text-white font-bold" style={{ background: "var(--accent)" }}>H</span>
           <span className="font-semibold tracking-tight">Hot<span style={{ color: "var(--accent)" }}>Now</span></span>
         </div>
+        <WorkspaceSwitcher initialId={workspaceId} initialName={companyName} initialDomain={companyDomain} />
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
           {NAV.map((section, i) => (
             <div key={i}>
@@ -83,7 +92,7 @@ export default function AppShell({
         </nav>
         <div className="border-t p-3" style={{ borderColor: "var(--border)" }}>
           <div className="px-2 pb-2">
-            <p className="text-sm font-medium truncate">{companyName}</p>
+            <p className="text-sm font-medium truncate">Company workspace</p>
             <p className="text-xs truncate" style={{ color: "var(--faint)" }}>{userEmail}</p>
           </div>
           <button onClick={signOut} className="nav-item w-full"><Icon name="signout" /><span>Sign out</span></button>
@@ -97,12 +106,12 @@ export default function AppShell({
         <div className="md:pl-[var(--sidebar)]">
           <header className="sticky top-0 z-10 h-14 flex items-center gap-3 px-4 md:px-6 border-b bg-[var(--bg)]/80 backdrop-blur" style={{ borderColor: "var(--border)" }}>
             <button className="md:hidden btn btn-ghost btn-sm" onClick={() => setOpen(true)} aria-label="Menu">☰</button>
-            <div className="flex-1" />
+            <div className="flex-1" /><ParallelActivity compact />
           </header>
           <main className="px-4 md:px-6 py-6 max-w-[1200px] mx-auto">{children}</main>
         </div>
       </div>
-    </div>
+    </div></ActivityProvider>
   );
 }
 

@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { apiJson } from "@/lib/workspace";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -15,22 +17,24 @@ export default function SignalsPage() {
   const [msg, setMsg] = useState<string | null>(null);
 
   async function load() {
-    const j = await fetch("/api/situations").then((r) => r.json());
-    setSignals(j.situations ?? []); setLoaded(true);
+    try { const j = await apiJson("/api/situations"); setSignals(j.situations ?? []); }
+    catch (error) { setMsg(error instanceof Error ? error.message : "Could not load signals"); }
+    finally { setLoaded(true); }
   }
-  useEffect(() => { load(); }, []);
-
+  useEffect(() => { void load(); }, []);
   async function toggle(s: Signal) {
-    setSignals((p) => p.map((x) => (x.id === s.id ? { ...x, enabled: !x.enabled } : x)));
-    await fetch("/api/situations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, enabled: !s.enabled }) });
+    if (busy) return; setBusy(true); setMsg(null);
+    try {
+      await apiJson("/api/situations", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, enabled: !s.enabled }) });
+      setSignals(previous => previous.map(item => item.id === s.id ? { ...item, enabled: !s.enabled } : item));
+    } catch (error) { setMsg(error instanceof Error ? error.message : "Could not update signal"); }
+    finally { setBusy(false); }
   }
 
   async function run() {
     setBusy(true); setMsg(null);
     try {
-      const res = await fetch("/api/discovery/start", { method: "POST" });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not start.");
+      const j = await apiJson("/api/discovery/start", { method: "POST" });
       if ((j.launched ?? []).length === 0) { setMsg(j.message || "Turn on at least one signal first."); setBusy(false); return; }
       router.push("/dashboard/companies");
     } catch (e) { setMsg(e instanceof Error ? e.message : "error"); setBusy(false); }
@@ -55,14 +59,14 @@ export default function SignalsPage() {
       ) : signals.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="font-medium">Let's figure out what makes companies need your product</p>
-          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Finish setup and we'll suggest a few situations worth watching to start finding opportunities.</p>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Finish setup and we'll suggest a few situations worth watching to start finding opportunities.</p><Link href="/onboarding" className="btn btn-primary mt-4">Finish setup</Link>
         </div>
       ) : (
         <div className="space-y-3">
           {signals.map((s) => (
             <div key={s.id} className="card p-4" style={{ opacity: s.enabled ? 1 : 0.65 }}>
               <div className="flex items-start gap-3">
-                <input type="checkbox" checked={s.enabled} onChange={() => toggle(s)} className="mt-1 h-4 w-4 accent-[var(--accent)]" />
+                <input type="checkbox" aria-label={`Watch ${s.name}`} disabled={busy} checked={s.enabled} onChange={() => toggle(s)} className="mt-1 h-4 w-4 accent-[var(--accent)]" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium">{s.name}</p>

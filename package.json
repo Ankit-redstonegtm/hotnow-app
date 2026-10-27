@@ -3,11 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "typecheck": "next typegen && tsc --noEmit",
+    "check:cloud": "node scripts/check-cloud.mjs",
+    "test:db": "node scripts/test-schema.mjs",
+    "build:worker": "node scripts/build-worker.mjs",
+    "worker": "node --env-file=.env.local .next/background-worker.cjs",
+    "test:background": "node scripts/test-background.mjs"
   },
   "dependencies": {
+    "@ag-ui/core": "^1.0.3",
+    "@ag-ui/encoder": "^1.0.3",
     "@anthropic-ai/sdk": "^0.133.0",
     "@google/genai": "^2.29.1",
     "@supabase/ssr": "^0.12.7",
@@ -18,7 +26,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
+    "@electric-sql/pglite": "^0.5.10",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

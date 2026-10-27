@@ -1,3 +1,4 @@
+import { validSlackUrl } from "@/lib/validation";
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { getSellerProfileByUser, getListWithItems } from "@/lib/db/repo";
@@ -10,6 +11,7 @@ export async function POST(req: Request) {
     const webhook = p.slack_webhook_url;
     if (!webhook) return NextResponse.json({ error: "Add a Slack webhook URL in Settings first." }, { status: 400 });
 
+    if (!validSlackUrl(webhook)) return NextResponse.json({ error: "Add a valid Slack incoming webhook URL in Settings." }, { status: 400 });
     const { listId, test } = await req.json();
     let text: string;
 
@@ -17,6 +19,7 @@ export async function POST(req: Request) {
       text = `:white_check_mark: *HotNow* is connected to this channel. New opportunities will land here.`;
     } else if (listId) {
       const { list, items } = await getListWithItems(sb, listId);
+      if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
       const lines = items.slice(0, 25).map((it: any) => {
         if (it.opportunities) {
           const c = it.opportunities.companies;

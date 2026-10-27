@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/lib/workspace";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -20,7 +21,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
       const d = new URLSearchParams(window.location.search).get("domain")?.trim();
       if (!d) return;
       localStorage.setItem("hotnow_pw_domain", d);
-      fetch("/api/prewarm", {
+      apiFetch("/api/prewarm", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ domain: d }),
@@ -35,9 +36,10 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setBusy(true);
     setError(null);
     try {
+      sessionStorage.removeItem("hotnow_workspace");
       const sb = createClient();
       if (mode === "signup") {
-        const res = await fetch("/api/auth/signup", {
+        const res = await apiFetch("/api/auth/signup", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ email, password }),
@@ -59,6 +61,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   async function google() {
+    sessionStorage.removeItem("hotnow_workspace");
     setError(null);
     const sb = createClient();
     const { error } = await sb.auth.signInWithOAuth({
@@ -87,14 +90,14 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="label">Email</label>
-            <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
+            <label className="label" htmlFor="auth-email">Email</label>
+            <input id="auth-email" autoComplete="email" className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
           </div>
           <div>
-            <label className="label">Password</label>
-            <input className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+            <label className="label" htmlFor="auth-password">Password</label>
+            <input id="auth-password" autoComplete={mode === "signup" ? "new-password" : "current-password"} className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
           </div>
-          {error && <p className="text-sm" style={{ color: "var(--accent)" }}>{error}</p>}
+          {error && <p role="alert" className="text-sm" style={{ color: "var(--accent)" }}>{error}</p>}
           <button className="btn btn-primary w-full" disabled={busy}>
             {busy ? "…" : mode === "signup" ? "Create account" : "Log in"}
           </button>

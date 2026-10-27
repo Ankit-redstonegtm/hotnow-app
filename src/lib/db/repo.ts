@@ -12,7 +12,7 @@ type SB = SupabaseClient<any, any, any, any, any>;
 
 // ---------------- seller profile ----------------
 export async function upsertSellerProfile(sb: SB, userId: string, p: SellerProfile): Promise<string> {
-  const existing = await sb.from("seller_profiles").select("id").eq("user_id", userId).maybeSingle();
+  const existing = await sb.from("seller_profiles").select("id").eq("user_id", userId).eq("domain", normalizeDomain(p.domain)).maybeSingle();
   const row = {
     user_id: userId,
     domain: p.domain,
@@ -37,31 +37,34 @@ export async function upsertSellerProfile(sb: SB, userId: string, p: SellerProfi
 
 /** Create/reset the seller profile row for an async research job and store the task id. */
 export async function beginResearch(sb: SB, userId: string, domain: string, taskId: string): Promise<string> {
-  const existing = await sb.from("seller_profiles").select("id").eq("user_id", userId).maybeSingle();
-  const row = {
-    user_id: userId,
-    domain,
-    research_task_id: taskId,
-    research_status: "running",
-    updated_at: new Date().toISOString(),
-  };
-  if (existing.data?.id) {
-    const { error } = await sb.from("seller_profiles").update(row).eq("id", existing.data.id);
-    if (error) throw new Error(error.message);
-    return existing.data.id;
-  }
-  const { data, error } = await sb.from("seller_profiles").insert(row).select("id").single();
+  const { data, error } = await sb.from("seller_profiles").upsert({
+    user_id: userId, domain: normalizeDomain(domain), research_task_id: taskId,
+    research_status: "running", updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id,domain" }).select("id").single();
   if (error) throw new Error(error.message);
   return data.id;
 }
 
 export async function getSellerProfileByUser(sb: SB, userId: string) {
-  const { data } = await sb.from("seller_profiles").select("*").eq("user_id", userId).maybeSingle();
+  const { headers, cookies } = await import("next/headers");
+  const requestHeaders = await headers();
+  const explicit = requestHeaders.get("x-hotnow-workspace");
+  const selected = explicit || (await cookies()).get("hotnow_workspace")?.value;
+  if (selected && /^[0-9a-f-]{36}$/i.test(selected)) {
+    const { data, error } = await sb.from("seller_profiles").select("*")
+      .eq("user_id", userId).eq("id", selected).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data || explicit) return data;
+  } else if (explicit) return null;
+  const { data, error } = await sb.from("seller_profiles").select("*").eq("user_id", userId)
+    .order("created_at", { ascending: true }).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
   return data;
 }
 
 export async function getSellerProfileById(sb: SB, id: string) {
-  const { data } = await sb.from("seller_profiles").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await sb.from("seller_profiles").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
   return data;
 }
 
@@ -75,7 +78,8 @@ export async function updateSellerProfile(sb: SB, id: string, fields: Record<str
 
 // ---------------- situations ----------------
 export async function replaceSituations(sb: SB, sellerProfileId: string, situations: BuyingSituation[]) {
-  await sb.from("buying_situations").delete().eq("seller_profile_id", sellerProfileId);
+  const { error: deleteError } = await sb.from("buying_situations").delete().eq("seller_profile_id", sellerProfileId);
+  if (deleteError) throw new Error(deleteError.message);
   const rows = situations.map((s) => ({
     seller_profile_id: sellerProfileId,
     name: s.name,
@@ -95,16 +99,21 @@ export async function replaceSituations(sb: SB, sellerProfileId: string, situati
 }
 
 export async function getSituations(sb: SB, sellerProfileId: string) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("buying_situations")
     .select("*")
     .eq("seller_profile_id", sellerProfileId)
     .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 export async function updateSituation(sb: SB, id: string, fields: Record<string, unknown>) {
-  const { error } = await sb.from("buying_situations").update(fields).eq("id", id);
+  const { data: { user } } = await sb.auth.getUser();
+  const profile = user && await getSellerProfileByUser(sb, user.id);
+  if (!profile) throw new Error("No company selected");
+  const { data, error } = await sb.from("buying_situations").update(fields).eq("id", id).eq("seller_profile_id", profile.id).select("id");
+  if (!error && !data?.length) throw new Error("Signal not found in this company");
   if (error) throw new Error(error.message);
 }
 
@@ -154,7 +163,8 @@ export async function upsertIcp(sb: SB, sellerProfileId: string, icp: IcpConstra
 }
 
 export async function getIcp(sb: SB, sellerProfileId: string): Promise<IcpConstraints | null> {
-  const { data } = await sb.from("icp_constraints").select("*").eq("seller_profile_id", sellerProfileId).maybeSingle();
+  const { data, error } = await sb.from("icp_constraints").select("*").eq("seller_profile_id", sellerProfileId).maybeSingle();
+  if (error) throw new Error(error.message);
   if (!data) return null;
   return {
     geographies: data.geographies ?? [],
@@ -180,7 +190,7 @@ export async function createRun(
       provider_job_id: r.providerJobId,
       generator: r.generator,
       match_limit: r.matchLimit,
-      status: "running",
+      status: "queued",
       est_cost: r.estCost,
     })
     .select("id")
@@ -192,22 +202,25 @@ export async function createRun(
 export async function getRuns(sb: SB, sellerProfileId: string, statuses?: string[]) {
   let q = sb.from("discovery_runs").select("*").eq("seller_profile_id", sellerProfileId);
   if (statuses?.length) q = q.in("status", statuses);
-  const { data } = await q.order("requested_at", { ascending: false });
+  const { data, error } = await q.order("requested_at", { ascending: false });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 export async function getRunById(sb: SB, id: string) {
-  const { data } = await sb.from("discovery_runs").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await sb.from("discovery_runs").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
   return data;
 }
 
 /** Look up a run by the provider's job id (FindAll `findall_id`). Used by the webhook. */
 export async function getRunByProviderJobId(sb: SB, providerJobId: string) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("discovery_runs")
     .select("*")
     .eq("provider_job_id", providerJobId)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   return data;
 }
 
@@ -249,55 +262,42 @@ export async function upsertOpportunity(
     opp: Opportunity;
   },
 ): Promise<{ id: string; isNew: boolean }> {
-  const existing = await admin
-    .from("opportunities")
-    .select("id")
-    .eq("seller_profile_id", o.sellerProfileId)
-    .eq("company_id", o.companyId)
-    .eq("situation_id", o.situationId)
-    .maybeSingle();
-
-  if (existing.data?.id) {
-    // already delivered for this (seller, company, situation) - refresh delivery timestamp only
-    await admin.from("opportunities").update({ last_delivered_at: new Date().toISOString() }).eq("id", existing.data.id);
-    return { id: existing.data.id, isNew: false };
+  const existing = await admin.from("opportunities").select("id").eq("seller_profile_id", o.sellerProfileId)
+    .eq("company_id", o.companyId).eq("situation_id", o.situationId).maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  let id = existing.data?.id, isNew = false;
+  if (!id) {
+    const inserted = await admin.from("opportunities").insert({ seller_profile_id: o.sellerProfileId, company_id: o.companyId,
+      situation_id: o.situationId, run_id: o.runId, what_happened: o.opp.whatHappened, why_it_matters: o.opp.whyItMatters,
+      confidence: o.opp.confidence, evidence_date: o.opp.evidenceDate ? safeDate(o.opp.evidenceDate) : null, status: "new" }).select("id").single();
+    if (inserted.error?.code === "23505") return upsertOpportunity(admin, o);
+    if (inserted.error) throw new Error(inserted.error.message);
+    id = inserted.data.id; isNew = true;
+  } else {
+    const { error } = await admin.from("opportunities").update({ last_delivered_at: new Date().toISOString() }).eq("id", id);
+    if (error) throw new Error(error.message);
   }
-
-  const { data, error } = await admin
-    .from("opportunities")
-    .insert({
-      seller_profile_id: o.sellerProfileId,
-      company_id: o.companyId,
-      situation_id: o.situationId,
-      run_id: o.runId,
-      what_happened: o.opp.whatHappened,
-      why_it_matters: o.opp.whyItMatters,
-      confidence: o.opp.confidence,
-      evidence_date: o.opp.evidenceDate ? o.opp.evidenceDate.slice(0, 10) : null,
-      status: "new",
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-
-  const evidenceRows = o.opp.evidence.map((e) => ({
-    opportunity_id: data.id,
-    reasoning: o.opp.whatHappened,
-    source_url: e.url,
-    source_date: e.date ? safeDate(e.date) : null,
-    citation: e,
+  // Retrying repairs missing evidence; completed runs must not silently lose it.
+  const saved = await admin.from("evidence").select("source_url").eq("opportunity_id", id);
+  if (saved.error) throw new Error(saved.error.message);
+  const seen = new Set((saved.data || []).map((r: any) => r.source_url));
+  const evidenceRows = o.opp.evidence.filter(e => { if (seen.has(e.url)) return false; seen.add(e.url); return true; }).map(e => ({
+    opportunity_id: id, reasoning: o.opp.whatHappened, source_url: e.url, source_date: e.date ? safeDate(e.date) : null, citation: e,
   }));
-  if (evidenceRows.length) await admin.from("evidence").insert(evidenceRows);
-
-  return { id: data.id, isNew: true };
+  if (evidenceRows.length) {
+    const { error } = await admin.from("evidence").insert(evidenceRows);
+    if (error) throw new Error(error.message);
+  }
+  return { id, isNew };
 }
 
 export async function getOpportunities(sb: SB, sellerProfileId: string) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("opportunities")
     .select("*, companies(normalized_domain, name), buying_situations(name), evidence(source_url, source_date)")
     .eq("seller_profile_id", sellerProfileId)
     .order("first_discovered_at", { ascending: false });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
@@ -309,30 +309,27 @@ function safeDate(d: string): string | null {
 // ---------------- contacts (Blitz decision-makers) ----------------
 /** Companies (from opportunities) that still need contact sourcing. */
 export async function companiesNeedingContacts(sb: SB, sellerProfileId: string, limit: number) {
-  const { data } = await sb
-    .from("opportunities")
-    .select("id, company_id, companies!inner(normalized_domain, name, contacts_sourced_at)")
-    .eq("seller_profile_id", sellerProfileId)
-    .is("companies.contacts_sourced_at", null)
-    .limit(limit);
-  const seen = new Set<string>();
+  const [{ data, error }, attempted] = await Promise.all([
+    sb.from("opportunities").select("id, company_id, companies!inner(normalized_domain, name)")
+      .eq("seller_profile_id", sellerProfileId),
+    sb.from("contact_sourcing").select("company_id").eq("seller_profile_id", sellerProfileId),
+  ]);
+  if (error) throw new Error(error.message);
+  if (attempted.error) throw new Error(attempted.error.message);
+  const seen = new Set<string>((attempted.data ?? []).map((r: any) => r.company_id));
   const out: Array<{ companyId: string; domain: string; name: string; opportunityId: string }> = [];
   for (const r of data ?? []) {
     const c = (r as any).companies;
     if (!c?.normalized_domain || seen.has(r.company_id)) continue;
     seen.add(r.company_id);
     out.push({ companyId: r.company_id, domain: c.normalized_domain, name: c.name, opportunityId: r.id });
+    if (out.length >= limit) break;
   }
   return out;
 }
 
 export async function countCompaniesNeedingContacts(sb: SB, sellerProfileId: string): Promise<number> {
-  const { data } = await sb
-    .from("opportunities")
-    .select("company_id, companies!inner(contacts_sourced_at)")
-    .eq("seller_profile_id", sellerProfileId)
-    .is("companies.contacts_sourced_at", null);
-  return new Set((data ?? []).map((r: any) => r.company_id)).size;
+  return (await companiesNeedingContacts(sb, sellerProfileId, Number.MAX_SAFE_INTEGER)).length;
 }
 
 export async function saveContacts(
@@ -352,9 +349,11 @@ export async function saveContacts(
       priority: c.priority,
       source: "blitz",
     }));
-    await admin.from("contacts").upsert(rows, { onConflict: "seller_profile_id,company_id,linkedin_url", ignoreDuplicates: true });
+    const { error } = await admin.from("contacts").upsert(rows, { onConflict: "seller_profile_id,company_id,linkedin_url", ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
   }
-  await admin.from("companies").update({ contacts_sourced_at: new Date().toISOString() }).eq("id", args.companyId);
+  const { error } = await admin.from("contact_sourcing").upsert({ seller_profile_id: args.sellerProfileId, company_id: args.companyId, sourced_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
   return args.contacts.length;
 }
 
@@ -369,7 +368,8 @@ export async function contactsNeedingEmail(sb: SB, sellerProfileId: string, limi
     .order("priority", { ascending: true })
     .limit(limit);
   if (tiers?.length) q = q.in("priority", tiers);
-  const { data } = await q;
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
   return (data ?? []).filter((c: any) => c.linkedin_url);
 }
 
@@ -381,22 +381,25 @@ export async function countContactsNeedingEmail(sb: SB, sellerProfileId: string,
     .is("email", null)
     .not("linkedin_url", "is", null);
   if (tiers?.length) q = q.in("priority", tiers);
-  const { count } = await q;
+  const { count, error } = await q;
+  if (error) throw new Error(error.message);
   return count ?? 0;
 }
 
 /** Record an email lookup result. Pass "" to mark "checked, none found" so we never retry. */
 export async function setContactEmail(admin: SB, id: string, email: string) {
-  await admin.from("contacts").update({ email }).eq("id", id);
+  const { error } = await admin.from("contacts").update({ email }).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function getContacts(sb: SB, sellerProfileId: string) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("contacts")
     .select("*, companies(normalized_domain, name)")
     .eq("seller_profile_id", sellerProfileId)
     .order("priority", { ascending: true })
     .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
@@ -408,31 +411,42 @@ export async function createList(sb: SB, sellerProfileId: string, name: string, 
 }
 
 export async function getLists(sb: SB, sellerProfileId: string) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("lists")
     .select("*, list_items(count)")
     .eq("seller_profile_id", sellerProfileId)
     .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 export async function addToList(sb: SB, listId: string, items: { opportunityIds?: string[]; contactIds?: string[] }) {
+  const { list } = await getListWithItems(sb, listId);
+  if (!list) throw new Error("List not found in this company");
   const rows = [
     ...(items.opportunityIds ?? []).map((id) => ({ list_id: listId, opportunity_id: id })),
     ...(items.contactIds ?? []).map((id) => ({ list_id: listId, contact_id: id })),
   ];
   if (!rows.length) return 0;
-  const { error } = await sb.from("list_items").insert(rows);
+  if ((list.kind === "contacts" && items.opportunityIds?.length) || (list.kind === "companies" && items.contactIds?.length)) throw new Error("List items must match the list type");
+  const column = list.kind === "contacts" ? "contact_id" : "opportunity_id";
+  const { data, error } = await sb.from("list_items").upsert(rows, { onConflict: "list_id," + column, ignoreDuplicates: true }).select("id");
   if (error) throw new Error(error.message);
-  return rows.length;
+  return data?.length || 0;
 }
 
 export async function getListWithItems(sb: SB, listId: string) {
-  const { data: list } = await sb.from("lists").select("*").eq("id", listId).single();
-  const { data: items } = await sb
+  const { data: { user } } = await sb.auth.getUser();
+  const profile = user && await getSellerProfileByUser(sb, user.id);
+  if (!profile) return { list: null, items: [] };
+  const { data: list, error } = await sb.from("lists").select("*").eq("id", listId).eq("seller_profile_id", profile.id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!list) return { list: null, items: [] };
+  const { data: items, error: itemsError } = await sb
     .from("list_items")
-    .select("*, opportunities(id, what_happened, why_it_matters, companies(normalized_domain, name), buying_situations(name)), contacts(full_name, title, linkedin_url, priority, companies(normalized_domain, name))")
+    .select("*, opportunities(id, what_happened, why_it_matters, companies(normalized_domain, name), buying_situations(name)), contacts(full_name, title, linkedin_url, priority, email, companies(normalized_domain, name))")
     .eq("list_id", listId);
+  if (itemsError) throw new Error(itemsError.message);
   return { list, items: items ?? [] };
 }
 
@@ -442,7 +456,8 @@ export async function getListWithItems(sb: SB, listId: string) {
  * the summary is ready by the time they land. Keyed by domain; server-only.
  */
 export async function getFreshPrewarm(admin: SB, domain: string, maxAgeMs: number) {
-  const { data } = await admin.from("prewarm_research").select("*").eq("domain", domain).maybeSingle();
+  const { data, error } = await admin.from("prewarm_research").select("*").eq("domain", domain).maybeSingle();
+  if (error) throw new Error(error.message);
   if (!data) return null;
   if (Date.now() - Date.parse(data.created_at) > maxAgeMs) return null;
   return data as { domain: string; task_id: string; created_at: string };
@@ -458,10 +473,11 @@ export async function upsertPrewarm(admin: SB, domain: string, taskId: string) {
 /** Crude global abuse guard: how many prewarms were started in the last `windowMs`. */
 export async function countRecentPrewarms(admin: SB, windowMs: number): Promise<number> {
   const since = new Date(Date.now() - windowMs).toISOString();
-  const { count } = await admin
+  const { count, error } = await admin
     .from("prewarm_research")
     .select("domain", { count: "exact", head: true })
     .gte("created_at", since);
+  if (error) throw new Error(error.message);
   return count ?? 0;
 }
 

@@ -35,10 +35,8 @@ export interface BlitzEmployee {
 /** Resolve a company domain to its LinkedIn company URL. */
 export async function domainToLinkedin(domain: string): Promise<string | null> {
   const clean = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
-  try {
-    const r = await call<any>("POST", "/v2/enrichment/domain-to-linkedin", { domain: clean });
-    if (r?.found && typeof r.company_linkedin_url === "string") return r.company_linkedin_url;
-  } catch { /* no match */ }
+  const r = await call<any>("POST", "/v2/enrichment/domain-to-linkedin", { domain: clean });
+  if (r?.found && typeof r.company_linkedin_url === "string") return r.company_linkedin_url;
   return null;
 }
 
@@ -58,31 +56,42 @@ export async function employeeFinder(opts: {
   };
   if (opts.jobLevel?.length) body.job_level = opts.jobLevel;
   if (opts.jobFunction?.length) body.job_function = opts.jobFunction;
-  if (opts.countryCode) body.country_code = opts.countryCode;
+  if (opts.countryCode) body.country_code = [opts.countryCode.trim().toUpperCase()];
 
   const r = await call<any>("POST", "/v2/search/employee-finder", body);
-  const list: any[] = r.employees || r.results || r.data || r.people || [];
+  const list = [r.results, r.employees, r.data, r.people].find(Array.isArray) as any[] | undefined;
+  // A changed/error response must not mark this company as successfully searched.
+  if (!list) throw new Error("Blitz employee finder returned an unexpected response: missing results array");
   const totalPages = r.total_pages || r.pagination?.total_pages || 1;
-  return { employees: list.map(mapEmployee).filter((e) => e.fullName || e.linkedinUrl), totalPages };
+  return { employees: list.map(e => mapEmployee(e, opts.companyLinkedinUrl)).filter((e) => e.fullName || e.linkedinUrl), totalPages };
 }
 
 /** Find a verified work email for a person by their LinkedIn URL. */
 export async function enrichEmail(personLinkedinUrl: string): Promise<string | null> {
   if (!personLinkedinUrl) return null;
-  try {
-    const r = await call<any>("POST", "/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl });
-    if (r?.found && typeof r.email === "string" && r.email.trim()) return r.email.trim();
-  } catch { /* no match */ }
+  const r = await call<any>("POST", "/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl });
+  if (r?.found && typeof r.email === "string" && r.email.trim()) return r.email.trim();
   return null;
 }
 
-function mapEmployee(e: any): BlitzEmployee {
+function mapEmployee(e: any, companyLinkedinUrl: string): BlitzEmployee {
+  const normalize = (url: string) => url.toLowerCase().replace(/\/+$/, "");
+  const experiences: any[] = Array.isArray(e.experiences) ? e.experiences : [];
+  // People can have several current roles. Use the searched company, never a
+  // previous employer's title or their headline to rank a different role.
+  const role = experiences.find(x => x.job_is_current === true && typeof x.company_linkedin_url === "string"
+    && normalize(x.company_linkedin_url) === normalize(companyLinkedinUrl))
+    ?? experiences.find(x => x.job_is_current === true && !x.company_linkedin_url);
+  const location = typeof e.location === "string" ? e.location
+    : e.location && typeof e.location === "object"
+      ? [e.location.city, e.location.state_code, e.location.country_code].filter(Boolean).join(", ")
+      : typeof e.country === "string" ? e.country : undefined;
   return {
     fullName: e.full_name || [e.first_name, e.last_name].filter(Boolean).join(" ") || e.name || "",
-    title: e.job_title || e.title || e.headline || "",
+    title: role?.job_title || e.job_title || e.title || e.headline || "",
     linkedinUrl: e.linkedin_url || e.profile_url || e.url || "",
-    jobLevel: e.job_level || e.seniority,
-    jobFunction: e.job_function || e.department,
-    location: e.location || e.country,
+    jobLevel: role?.job_level || e.job_level || e.seniority,
+    jobFunction: role?.job_function || e.job_function || e.department,
+    location,
   };
 }

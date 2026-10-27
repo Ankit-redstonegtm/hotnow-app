@@ -1,94 +1,48 @@
-// Background ingest: Parallel calls this when a FindAll run reaches a terminal
-// state (completed / failed / cancelled). This is what lets results land WITHOUT
-// the user keeping a browser tab open on the dashboard.
-//
-// Auth: Parallel signs every delivery with a Standard Webhooks HMAC-SHA256
-// signature. When PARALLEL_WEBHOOK_SECRET is set we verify it. Even unverified,
-// this endpoint is safe: it only ever re-fetches the real run's real results from
-// Parallel using our own API key and ingests them idempotently - it cannot inject
-// data from the request body.
-
 import { NextResponse } from "next/server";
-import crypto from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getRunByProviderJobId } from "@/lib/db/repo";
-import { ingestRun, notifyIfWaveComplete } from "@/lib/discovery/worker";
+import { verifyParallelWebhook } from "@/lib/parallel-webhook";
+import { findAllStatus } from "@/lib/providers/parallel";
 
-export const maxDuration = 300;
-
+// Acknowledge quickly. The worker fetches authoritative results and ingests them.
 export async function POST(req: Request) {
-  const raw = await req.text();
-
-  const verified = verifySignature(req, raw);
-  if (verified === false) return NextResponse.json({ error: "bad signature" }, { status: 401 });
-
-  let evt: any;
-  try {
-    evt = raw ? JSON.parse(raw) : {};
-  } catch {
-    return NextResponse.json({ error: "bad json" }, { status: 400 });
-  }
-
-  const data = evt.data ?? {};
-  const findallId: string | undefined = data.findall_id || data.id || evt.findall_id;
-  if (!findallId) return NextResponse.json({ error: "no findall_id" }, { status: 400 });
-
-  const admin = createAdminClient();
-  const run = await getRunByProviderJobId(admin, findallId);
-  if (!run) return NextResponse.json({ ok: true, note: "unknown run (ignored)" });
-
-  // Already ingested - acknowledge so Parallel stops retrying.
-  if (run.status === "completed" || run.status === "failed") {
-    return NextResponse.json({ ok: true, idempotent: true, status: run.status });
-  }
-
-  const result = await ingestRun(admin, run);
-  await notifyIfWaveComplete(admin, run.seller_profile_id);
-  return NextResponse.json({ ok: true, ...result });
-}
-
-// Some webhook systems send a GET to validate the endpoint; answer it.
-export async function GET() {
-  return NextResponse.json({ ok: true });
-}
-
-/**
- * Standard Webhooks verification.
- * Returns true if valid, false if invalid, null if we're not configured to verify
- * (no secret set) - callers treat null as "allowed" because the handler is safe
- * even without verification.
- */
-function verifySignature(req: Request, body: string): boolean | null {
   const secret = process.env.PARALLEL_WEBHOOK_SECRET;
-  if (!secret) return null;
-
-  const id = req.headers.get("webhook-id");
-  const ts = req.headers.get("webhook-timestamp");
-  const sigHeader = req.headers.get("webhook-signature");
-  if (!id || !ts || !sigHeader) return false;
-
-  const keyMaterial = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
-  let key: Buffer;
+  if (!secret) return NextResponse.json({ error: "Webhooks are not configured" }, { status: 503 });
+  const raw = await req.text();
+  if (!verifyParallelWebhook(req.headers, raw, secret)) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  let event: any;
+  try { event = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   try {
-    key = Buffer.from(keyMaterial, "base64");
+    const db = createAdminClient(), data = event.data || {};
+    if (event.type === "task_run.status" && typeof data.run_id === "string") {
+      for (const kind of ["research", "situations"]) {
+        const { error } = await db.from("seller_profiles").update({ [kind + "_status"]: "ready" })
+          .eq(kind + "_task_id", data.run_id).eq(kind + "_status", "running");
+        if (error) throw new Error(error.message);
+      }
+    } else if (["findall.candidate.generated", "findall.candidate.matched", "findall.candidate.enriched"].includes(event.type) && typeof data.findall_id === "string") {
+      const { data: run, error: lookupError } = await db.from("discovery_runs").select("id")
+        .eq("provider_job_id", data.findall_id).eq("status", "running").maybeSingle();
+      if (lookupError) throw new Error(lookupError.message);
+      if (run) {
+        // Fetch cumulative counters, rather than incrementing on deliveries that
+        // may be repeated. Short timeout keeps callbacks separate from ingestion.
+        const progress = await findAllStatus(data.findall_id, 5000);
+        const { error } = await db.from("discovery_runs").update({ candidates_count: progress.candidatesCount,
+          matched_count: progress.matchedCount }).eq("id", run.id).eq("status", "running");
+        if (error) throw new Error(error.message);
+      }
+    } else if (["findall.run.completed", "findall.run.failed", "findall.run.cancelled"].includes(event.type) && typeof data.findall_id === "string") {
+      const metrics = data.status?.metrics;
+      const counts: Record<string, number> = {};
+      if (Number.isSafeInteger(metrics?.generated_candidates_count) && metrics.generated_candidates_count >= 0) counts.candidates_count = metrics.generated_candidates_count;
+      if (Number.isSafeInteger(metrics?.matched_candidates_count) && metrics.matched_candidates_count >= 0) counts.matched_count = metrics.matched_candidates_count;
+      if (Object.keys(counts).length) {
+        const { error } = await db.from("discovery_runs").update(counts).eq("provider_job_id", data.findall_id).eq("status", "running");
+        if (error) throw new Error(error.message);
+      }
+    }
+    return NextResponse.json({ ok: true });
   } catch {
-    return false;
+    return NextResponse.json({ error: "Could not persist event; please retry" }, { status: 503 });
   }
-
-  const signed = `${id}.${ts}.${body}`;
-  const expected = crypto.createHmac("sha256", key).update(signed).digest("base64");
-
-  // Header is space-delimited "v1,<sig>" entries; any match is valid.
-  for (const entry of sigHeader.split(" ")) {
-    const sig = entry.includes(",") ? entry.split(",")[1] : entry;
-    if (sig && timingSafeEq(sig, expected)) return true;
-  }
-  return false;
-}
-
-function timingSafeEq(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
 }

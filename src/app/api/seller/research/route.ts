@@ -1,14 +1,12 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
-import { startResearch } from "@/lib/engine";
 import { normalizeDomain } from "@/lib/util/domain";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { beginResearch, getFreshPrewarm } from "@/lib/db/repo";
+import { DB_SCHEMA } from "@/lib/supabase/schema";
 
-// Non-blocking: creates the research task and returns immediately. Client polls GET.
+// Persist intent and return. Only the background worker calls the provider.
 export const maxDuration = 60;
 
-const PREWARM_REUSE_MS = 30 * 60 * 1000;
 
 export async function POST(req: Request) {
   try {
@@ -19,29 +17,59 @@ export async function POST(req: Request) {
     }
 
     const normalized = normalizeDomain(domain);
+    if (!/^(?=.{3,253}$)([a-z0-9](-?[a-z0-9])*\.)+[a-z]{2,}$/.test(normalized)) {
+      return NextResponse.json({ error: "Enter a valid company website domain" }, { status: 400 });
+    }
+    const { data: existing, error: lookupError } = await sb.from("seller_profiles")
+      .select("id, research_status").eq("user_id", user.id).eq("domain", normalized).maybeSingle();
+    if (lookupError?.code === "PGRST106") {
+      return NextResponse.json({
+        code: "SUPABASE_SCHEMA_UNAVAILABLE",
+        error: `Supabase cannot access the '${DB_SCHEMA}' schema. Run the database setup SQL if needed, then add '${DB_SCHEMA}' to Data API Settings → Exposed schemas in your Supabase project.`,
+      }, { status: 503 });
+    }
+    if (lookupError?.code === "PGRST205" || lookupError?.code === "42P01") {
+      return NextResponse.json({
+        code: "SUPABASE_TABLES_MISSING",
+        error: "The HotNow database tables are missing. Run supabase/migrations/001_hotnow.sql in your new Supabase project's SQL Editor before starting research.",
+      }, { status: 503 });
+    }
+    if (lookupError) throw new Error(lookupError.message);
+    if (existing && ["queued", "starting", "running", "ready", "done"].includes(existing.research_status)) {
+      (await cookies()).set("hotnow_workspace", existing.id, {
+        httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/",
+      });
+      return NextResponse.json({ status: existing.research_status === "done" ? "done" : "running", profileId: existing.id, existing: true });
+    }
 
-    // Adopt a pre-signup head start if one exists: the research task was already
-    // kicked off from the marketing CTA, so it's likely done by now. Only reuse
-    // when the user added no extra description (prewarm runs domain-only).
-    let taskId: string | undefined;
-    let normalizedDomain = normalized;
-    let reusedPrewarm = false;
-    if (!description) {
-      const prewarm = await getFreshPrewarm(createAdminClient(), normalized, PREWARM_REUSE_MS);
-      if (prewarm) {
-        taskId = prewarm.task_id;
-        reusedPrewarm = true;
+    if (!process.env.PARALLEL_API_KEY?.trim()) {
+      return NextResponse.json({
+        code: "PARALLEL_API_KEY_MISSING",
+        error: "Company research requires Parallel AI. Add PARALLEL_API_KEY to .env.local, then recreate the Docker container to load it. Supabase credentials only provide login and database access.",
+      }, { status: 503 });
+    }
+
+    const payload = { user_id: user.id, domain: normalized, research_task_id: null, research_status: "queued",
+      raw_research: { _background: { description: typeof description === "string" ? description : "" } }, updated_at: new Date().toISOString() };
+    let profileId = existing?.id;
+    if (existing) {
+      const { error } = await sb.from("seller_profiles").update(payload).eq("id", existing.id)
+        .not("research_status", "in", "(queued,starting,running,ready,done)");
+      if (error) throw new Error(error.message);
+    } else {
+      const { data, error } = await sb.from("seller_profiles").upsert(payload, { onConflict: "user_id,domain", ignoreDuplicates: true }).select("id").maybeSingle();
+      if (error) throw new Error(error.message);
+      profileId = data?.id;
+      if (!profileId) {
+        const { data: concurrent, error: concurrentError } = await sb.from("seller_profiles").select("id").eq("user_id", user.id).eq("domain", normalized).single();
+        if (concurrentError) throw new Error(concurrentError.message);
+        profileId = concurrent.id;
       }
     }
-
-    if (!taskId) {
-      const started = await startResearch(domain, description);
-      taskId = started.taskId;
-      normalizedDomain = started.normalizedDomain;
-    }
-
-    await beginResearch(sb, user.id, normalizedDomain, taskId);
-    return NextResponse.json({ status: "running", prewarmed: reusedPrewarm });
+    (await cookies()).set("hotnow_workspace", profileId, {
+      httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/",
+    });
+    return NextResponse.json({ status: "running", profileId, queued: true }, { status: 202 });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

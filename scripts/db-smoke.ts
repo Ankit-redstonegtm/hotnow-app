@@ -10,8 +10,10 @@ const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 (async () => {
   const sb = createClient(url, anon, { db: { schema: "hotnow" }, auth: { persistSession: false } });
 
-  const email = "demo+test2@hotnow.co";
-  const { data: auth, error: signInErr } = await sb.auth.signInWithPassword({ email, password: "hotnow12345" });
+  const email = process.env.HOTNOW_TEST_EMAIL;
+  const password = process.env.HOTNOW_TEST_PASSWORD;
+  if (!email || !password) throw new Error("Set HOTNOW_TEST_EMAIL and HOTNOW_TEST_PASSWORD for this manual smoke test.");
+  const { data: auth, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
   if (signInErr) throw new Error("sign-in failed: " + signInErr.message);
   console.log("signed in as", auth.user?.id);
 

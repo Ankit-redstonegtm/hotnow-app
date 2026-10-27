@@ -26,20 +26,16 @@ export async function sourceContactsForCompany(
   const max = opts.maxPerCall ?? 12;
   const functions = criteria.jobFunctions?.length ? criteria.jobFunctions : DEFAULT_FUNCTIONS;
 
-  // Call A: C-Team (no function filter) - founders/CxO regardless of tagged function.
-  // Call B: senior leaders in the target functions.
-  const calls: Promise<{ employees: BlitzEmployee[] }>[] = [
-    employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: ["C-Team"], countryCode: criteria.countryCode, maxResults: max }),
-    employeeFinder({
-      companyLinkedinUrl: companyLinkedin,
-      jobLevel: criteria.jobLevels?.length ? criteria.jobLevels : ["VP", "Director"],
-      jobFunction: functions,
-      countryCode: criteria.countryCode,
-      maxResults: max,
-    }),
-  ];
+  const levels = criteria.jobLevels?.length ? criteria.jobLevels : ["C-Team", "VP", "Director"];
+  const calls: Promise<{ employees: BlitzEmployee[] }>[] = [];
+  if (levels.includes("C-Team")) calls.push(employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: ["C-Team"], countryCode: criteria.countryCode, maxResults: max }));
+  const seniorLevels = levels.filter(level => level !== "C-Team");
+  if (seniorLevels.length) calls.push(employeeFinder({ companyLinkedinUrl: companyLinkedin, jobLevel: seniorLevels,
+    jobFunction: functions, countryCode: criteria.countryCode, maxResults: max }));
 
   const settled = await Promise.allSettled(calls);
+  const failure = settled.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
   const all: BlitzEmployee[] = [];
   for (const s of settled) if (s.status === "fulfilled") all.push(...s.value.employees);
 

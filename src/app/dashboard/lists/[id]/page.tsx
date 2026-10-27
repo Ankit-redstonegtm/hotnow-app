@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch, apiJson } from "@/lib/workspace";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { downloadCSV } from "@/lib/csv";
@@ -8,24 +9,25 @@ export default function ListDetailPage({ params }: { params: Promise<{ id: strin
   const [list, setList] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/lists/${id}`).then((r) => r.json()).then((j) => { setList(j.list); setItems(j.items ?? []); setLoaded(true); });
+    apiJson(`/api/lists/${id}`).then((j) => { setList(j.list); setItems(j.items ?? []); }).catch(e => setError(e.message)).finally(() => setLoaded(true));
   }, [id]);
 
   const isContacts = list?.kind === "contacts";
 
   function exportCsv() {
     const rows = items.map((it) => {
-      if (it.contacts) return { name: it.contacts.full_name, title: it.contacts.title, priority: it.contacts.priority, company: it.contacts.companies?.name ?? it.contacts.companies?.normalized_domain ?? "", linkedin: it.contacts.linkedin_url };
+      if (it.contacts) return { name: it.contacts.full_name, title: it.contacts.title, priority: it.contacts.priority, email: it.contacts.email || "", company: it.contacts.companies?.name ?? it.contacts.companies?.normalized_domain ?? "", linkedin: it.contacts.linkedin_url };
       const o = it.opportunities; return { company: o?.companies?.name ?? "", domain: o?.companies?.normalized_domain ?? "", signal: o?.buying_situations?.name ?? "", what_happened: o?.what_happened ?? "" };
     });
     downloadCSV(`hotnow-list-${(list?.name || "list").replace(/\s+/g, "-").toLowerCase()}`, rows);
   }
   async function toSlack() {
     setMsg("Sending to Slack…");
-    const r = await fetch("/api/slack/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ listId: id }) });
+    const r = await apiFetch("/api/slack/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ listId: id }) });
     const j = await r.json(); setMsg(r.ok ? "Sent to Slack ✓" : j.error);
   }
 
@@ -43,7 +45,7 @@ export default function ListDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
       {msg && <div className="card p-3 mb-4 text-sm" style={{ color: "var(--accent-ink)" }}>{msg}</div>}
-      {!loaded ? <div className="card p-6"><div className="skeleton h-5 w-48 rounded" /></div> : (
+      {error ? <div role="alert" className="card p-4">{error}</div> : !loaded ? <div className="card p-6"><div className="skeleton h-5 w-48 rounded" /></div> : (
         <div className="card overflow-x-auto">
           <table className="tbl">
             {isContacts ? (

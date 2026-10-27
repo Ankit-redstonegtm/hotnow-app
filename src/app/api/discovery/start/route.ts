@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
-import { launchDiscovery, estimateFindAllCost, LIMITS } from "@/lib/engine";
+import { estimateFindAllCost, LIMITS } from "@/lib/engine";
 import type { BuyingSituation, Generator, IcpConstraints } from "@/lib/engine";
 import { getSellerProfileByUser, getSituations, getIcp, createRun, getRuns } from "@/lib/db/repo";
-import { discoveryWebhookUrl } from "@/lib/discovery/worker";
 
 export const maxDuration = 120;
 
@@ -18,6 +17,9 @@ export async function POST(req: Request) {
       parseInt(url.searchParams.get("max") ?? String(LIMITS.maxSituationsPerDailyRun), 10),
       LIMITS.maxSituationsPerDailyRun,
     );
+    if (!Number.isInteger(max) || max < 1) {
+      return NextResponse.json({ error: "max must be a positive integer" }, { status: 400 });
+    }
 
     // Don't relaunch situations that already have an in-flight run.
     const active = await getRuns(sb, profile.id, ["queued", "running"]);
@@ -32,27 +34,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ launched: [], message: "Turn on at least one signal first." });
     }
 
-    // When set, Parallel will POST to this URL the moment each run finishes, so
-    // results ingest with no open browser tab. Undefined in local dev (unreachable).
-    const webhookUrl = discoveryWebhookUrl();
+    // Worker launches provider runs independently of this HTTP request.
 
     const launched: Array<{ runId: string; situationId: string; name: string }> = [];
     for (const s of situations) {
       const situation = toSituation(s);
       const matchLimit = Math.min(icp.dailyTarget || LIMITS.defaultMatchLimit, LIMITS.maxMatchLimit);
-      const { runId: providerJobId } = await launchDiscovery(situation, icp, { matchLimit, webhookUrl });
+      // Reserve the signal in Postgres before spending on the provider. The
+      // partial unique index rejects simultaneous launches for the same signal.
       const dbRunId = await createRun(sb, {
         sellerProfileId: profile.id,
         situationId: s.id,
         generator: situation.generator,
         matchLimit,
-        providerJobId,
+        providerJobId: `pending-${crypto.randomUUID()}`,
         estCost: estimateFindAllCost(situation.generator, matchLimit),
       });
       launched.push({ runId: dbRunId, situationId: s.id, name: s.name });
     }
 
-    return NextResponse.json({ launched });
+    return NextResponse.json({ launched, queued: true }, { status: 202 });
   } catch (e) {
     return handle(e);
   }

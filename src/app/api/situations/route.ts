@@ -1,22 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
-import { startSituations } from "@/lib/engine";
-import type { SellerProfile } from "@/lib/engine";
-import { getSellerProfileByUser, getSituations, replaceSituations, updateSituation, updateSellerProfile } from "@/lib/db/repo";
+import { getSellerProfileByUser, getSituations, updateSituation } from "@/lib/db/repo";
 
 export const maxDuration = 60;
-
-function toProfile(row: any): SellerProfile {
-  return {
-    domain: row.domain,
-    companyName: row.company_name ?? row.domain,
-    productDescription: row.product_description ?? "",
-    targetCustomers: row.target_customers ?? "",
-    problemsSolved: row.problems_solved ?? "",
-    buyerPersonas: row.buyer_personas ?? [],
-    industries: row.industries ?? [],
-  };
-}
 
 export async function GET() {
   try {
@@ -36,17 +22,12 @@ export async function POST() {
     const row = await getSellerProfileByUser(sb, user.id);
     if (!row) return NextResponse.json({ error: "research your company first" }, { status: 400 });
 
-    const { taskId, situations } = await startSituations(toProfile(row), { count: 5 });
-
-    if (situations) {
-      // fast path (non-Parallel LLM): generated inline
-      const saved = await replaceSituations(sb, row.id, situations);
-      await updateSellerProfile(sb, row.id, { situations_status: "done", situations_task_id: null });
-      return NextResponse.json({ status: "done", situations: saved });
-    }
-    // async path: store task id, client polls /status
-    await updateSellerProfile(sb, row.id, { situations_task_id: taskId, situations_status: "running" });
-    return NextResponse.json({ status: "running" });
+    if (row.research_status !== "done") return NextResponse.json({ error: "Company research is still running" }, { status: 409 });
+    if (["queued", "starting", "running", "ready"].includes(row.situations_status)) return NextResponse.json({ status: "running" });
+    const { error } = await sb.from("seller_profiles").update({ situations_status: "queued", situations_task_id: null, updated_at: new Date().toISOString() })
+      .eq("id", row.id).eq("situations_status", row.situations_status);
+    if (error) throw new Error(error.message);
+    return NextResponse.json({ status: "running" }, { status: 202 });
   } catch (e) {
     return handle(e);
   }
