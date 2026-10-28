@@ -1,16 +1,14 @@
 // Engine orchestrator - the provider-agnostic interface (spec §7).
-// Stages: A research → B situations → C/D discover → E/F qualify.
+// Stages: A+B Clay seller intelligence → C/D FindAll discover → E/F qualify.
 
 export * from "./types";
 export { LIMITS, FINDALL_PRICE, estimateFindAllCost } from "./config";
 
-export { researchCompany, startResearch, finishResearch } from "./seller";
-export { generateSituations, startSituations, finishSituations } from "./situations";
+export { researchCompany, researchSeller, startResearch, finishResearch } from "./seller";
+export type { SellerIntelligence } from "./seller";
 export { launchDiscovery, discoverCandidates, discoveryStatus, discoveryResult, resolveDomain, isMatched } from "./discovery";
 export { qualifyCandidates } from "./qualify";
 
-import { researchCompany } from "./seller";
-import { generateSituations } from "./situations";
 import { discoverCandidates } from "./discovery";
 import { qualifyCandidates } from "./qualify";
 import type { BuyingSituation, IcpConstraints, Opportunity, SellerProfile } from "./types";

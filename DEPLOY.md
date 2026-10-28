@@ -16,8 +16,10 @@ Set these for **Production** and **Preview** (values are in your local `app/.env
 
 | Variable | Value source |
 |---|---|
-| `PARALLEL_API_KEY` | from .env.local |
-| `LLM_PROVIDER` | `parallel` |
+| `CLAY_API_KEY` | Clay personal API key. Required for seller research and buying situations. |
+| `CLAY_ROUTINE_ID` | `workflow:wf_0tmxbl8enV2ZTXSfktn` (optional; this is the default) |
+| `PARALLEL_API_KEY` | from .env.local. Company discovery (FindAll) only. |
+| `LLM_PROVIDER` | `parallel` (unused for seller research) |
 | `GEMINI_API_KEY` | from .env.local (optional until it has credits) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://vsxgszlevcygijgulnzm.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the `sb_publishable_...` key |

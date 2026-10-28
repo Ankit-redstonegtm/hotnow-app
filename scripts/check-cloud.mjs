@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 config({ path: '.env.local', quiet: true });
-const required = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'PARALLEL_API_KEY', 'BLITZ_API_KEY'];
+const required = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'CLAY_API_KEY', 'PARALLEL_API_KEY', 'BLITZ_API_KEY'];
 const missing = required.filter(key => !process.env[key]);
 for (const key of required) console.log(`${process.env[key] ? 'SET' : 'MISSING'} ${key}`);
 if (missing.length) { process.exitCode = 1; }

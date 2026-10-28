@@ -8,7 +8,7 @@ export default function SetupPage() {
         <li>Create a project at <a className="underline" href="https://supabase.com/dashboard">Supabase</a>.</li>
         <li>Run <code>supabase/migrations/001_hotnow.sql</code> in its SQL Editor, then expose the <code>hotnow</code> schema in Data API settings.</li>
         <li>Fill in <code>.env.local</code>: Supabase project URL, publishable key, and server secret key.</li>
-        <li>Add Parallel AI credentials for research and discovery. Add Blitz credentials for contacts and emails.</li>
+        <li>Add a Clay API key for company research and buying signals. Add Parallel AI credentials for company discovery. Add Blitz credentials for contacts and emails.</li>
         <li>Restart the local server and open <a className="underline" href="/signup">Create account</a>.</li>
       </ol>
       <p className="mt-6 text-sm" style={{ color: "var(--muted)" }}>The full account setup guide is LOCAL_SETUP.md in the project folder. Keep secret keys in .env.local.</p>

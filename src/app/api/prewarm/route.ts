@@ -1,8 +1,8 @@
 // Pre-signup head start. Called from the marketing site the moment someone enters
 // their domain and clicks the CTA - BEFORE they finish creating an account. It
-// starts ONLY the cheap, domain-only research stage (Parallel Task ~$0.025) so the
-// company summary is ready by the time they land in onboarding. The expensive
-// discovery stage ($0.25+) is never triggered here - that stays behind auth.
+// starts the Clay seller-intelligence routine (seller + buying situations) so the
+// summary is ready by the time they land in onboarding. Company discovery
+// (Parallel FindAll) is never triggered here - that stays behind auth.
 //
 // Public + unauthenticated by necessity, so it is deliberately cheap and guarded:
 //   - dedupe by domain within a window (same domain twice = no new spend)

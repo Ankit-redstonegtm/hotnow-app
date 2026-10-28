@@ -1,5 +1,6 @@
 // Parallel.ai provider. Server-side only (reads PARALLEL_API_KEY).
-// Wraps Task API (seller research, verification), FindAll (discovery), Search (fallback).
+// FindAll discovers companies; Search resolves an official domain when a result URL is a directory.
+// Seller research and buying situations use Clay. Task helpers remain for optional schema-bound reasoning.
 // All field extraction is defensive: FindAll is beta and response shapes drift.
 
 import { discoveryWebhookUrl } from "../parallel-webhook";

@@ -4,13 +4,14 @@
  *   npx tsx scripts/engine-e2e.ts <domain> [--desc "what they sell"] \
  *        [--situation N] [--limit N] [--stage situations|full]
  *
- * Reads PARALLEL_API_KEY + ANTHROPIC_API_KEY from app/.env.local (or env).
+ * Reads CLAY_API_KEY + PARALLEL_API_KEY from .env.local (or env).
+ * Clay returns the seller and buying situations together. Discovery still uses Parallel.
  * Default runs discovery on ONE situation only (cost control).
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
 config({ path: ".env" });
-import { researchCompany, generateSituations, defaultIcp, runSituation } from "../src/lib/engine";
+import { researchSeller, runSituation } from "../src/lib/engine";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -36,9 +37,10 @@ const rule = () => line("=".repeat(76));
   line(`HotNow engine E2E — ${domain}`);
   rule();
 
-  // Stage A
-  line("\n[A] Researching seller…");
-  const profile = await researchCompany(domain, desc);
+  // Stage A+B — one Clay routine.
+  line("\n[A+B] Researching seller and buying situations…");
+  if (desc) line("    (typed description is kept for your notes; Clay input is the domain only)");
+  const { profile, situations, icp } = await researchSeller(domain);
   line(`    company:   ${profile.companyName}`);
   line(`    sells:     ${profile.productDescription}`);
   line(`    buyers:    ${profile.targetCustomers}`);
@@ -50,9 +52,7 @@ const rule = () => line("=".repeat(76));
     return done(t0);
   }
 
-  // Stage B
-  line("\n[B] Generating buying situations…");
-  const situations = await generateSituations(profile, { count: 5 });
+  line("\n[B] Buying situations from Clay…");
   situations.forEach((s, i) => {
     line(`\n   ${i}. ${s.name}  (${s.generator})`);
     line(`      ${s.description}`);
@@ -78,7 +78,6 @@ const rule = () => line("=".repeat(76));
 
   // Stage C/D/E/F
   line(`\n[C-F] Discovering for situation #${situationIdx}: "${chosen.name}" (limit ${limit})…`);
-  const icp = defaultIcp(profile);
   const { opportunities, rejected, runId, estCost } = await runSituation(chosen, icp, {
     matchLimit: limit,
     onTick: (s) => process.stdout.write(`\r      status: ${s.status}  matched: ${s.matchedCount}   `),

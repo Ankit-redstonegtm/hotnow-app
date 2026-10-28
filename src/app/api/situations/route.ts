@@ -24,6 +24,12 @@ export async function POST() {
 
     if (row.research_status !== "done") return NextResponse.json({ error: "Company research is still running" }, { status: 409 });
     if (["queued", "starting", "running", "ready"].includes(row.situations_status)) return NextResponse.json({ status: "running" });
+    if (!process.env.CLAY_API_KEY?.trim()) {
+      return NextResponse.json({
+        code: "CLAY_API_KEY_MISSING",
+        error: "Buying signals require Clay. Add CLAY_API_KEY to .env.local, then recreate the Docker container to load it.",
+      }, { status: 503 });
+    }
     const { error } = await sb.from("seller_profiles").update({ situations_status: "queued", situations_task_id: null, updated_at: new Date().toISOString() })
       .eq("id", row.id).eq("situations_status", row.situations_status);
     if (error) throw new Error(error.message);

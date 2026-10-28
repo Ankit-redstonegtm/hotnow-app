@@ -61,22 +61,39 @@ Email/password signup works through the app's existing server signup route,
 which creates pre-confirmed accounts. Google sign-in is optional; enable the
 Google provider using the steps in `GOOGLE_AUTH_SETUP.md` if you want it.
 
-## 3. Create Parallel AI account
+## 3. Create Clay and Parallel accounts
+
+Seller research and buying situations are one Clay routine. Parallel FindAll is
+only used to find companies after those situations exist.
+
+### Clay
+
+1. In Clay, open Settings → Account and create a personal API key.
+2. Set these values in `.env.local`:
+
+```dotenv
+CLAY_API_KEY=YOUR-CLAY-KEY
+CLAY_ROUTINE_ID=workflow:wf_0tmxbl8enV2ZTXSfktn
+```
+
+`CLAY_ROUTINE_ID` is optional. When unset, the app uses that routine
+(HotNow — Seller Intelligence v1). The app calls Clay's public routines API
+and polls for the result. It does not register a Clay webhook.
+
+### Parallel
 
 1. Open https://platform.parallel.ai and create an account.
-2. Create an API key and enable the access/credits required for Task and FindAll.
+2. Create an API key and enable the access/credits required for FindAll.
 3. Set these values in `.env.local`:
 
 ```dotenv
 PARALLEL_API_KEY=YOUR-PARALLEL-KEY
-LLM_PROVIDER=parallel
 APP_URL=http://localhost:3000
 ```
 
-This handles website research, buying-signal generation, and company discovery.
-Gemini and Anthropic keys are optional; they are not needed when using Parallel
-for signal generation. Prices and provider limits must be checked in your provider
-account; the repository's cost figures are estimates, not billing guarantees.
+Parallel finds companies for each buying situation and resolves official domains.
+Prices and provider limits must be checked in your provider account; the
+repository's cost figures are estimates, not billing guarantees.
 
 The launcher starts a separate background worker. It checks persisted tasks every
 five seconds, so research, buying signals, and discovery finish even after you
