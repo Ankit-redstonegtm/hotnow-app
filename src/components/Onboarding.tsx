@@ -31,6 +31,26 @@ const SIZE_RANGES = [
   { label: "1,000+", min: 1000, max: null as number | null },
 ];
 
+function sizeIndexFor(min: number | null, max: number | null): number {
+  const exact = SIZE_RANGES.findIndex((r) => r.min === min && r.max === max);
+  if (exact >= 0) return exact;
+  if (min == null && max == null) return 0;
+  let best = -1;
+  let bestSpan = Infinity;
+  for (let i = 1; i < SIZE_RANGES.length; i++) {
+    const r = SIZE_RANGES[i];
+    const lo = r.min ?? 0;
+    const hi = r.max ?? Number.POSITIVE_INFINITY;
+    const a = min ?? lo;
+    const b = max ?? hi;
+    if (a >= lo && b <= hi && (best < 0 || hi - lo < bestSpan)) {
+      best = i;
+      bestSpan = hi - lo;
+    }
+  }
+  return best >= 0 ? best : 0;
+}
+
 const LEVELS = ["C-Team", "VP", "Director", "Manager"];
 const FUNCTIONS = ["Sales & Business Development", "Operations", "Advertising & Marketing", "General Business & Management"];
 
@@ -100,6 +120,8 @@ export default function Onboarding() {
             setProfile({ company_name: pr.companyName, product_description: pr.productDescription,
               target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
               buyer_personas: pr.buyerPersonas, industries: pr.industries });
+            const icpRes = await apiFetch("/api/icp").then((r) => r.json()).catch(() => ({}));
+            applySavedIcp(icpRes.icp, pr?.industries);
             await loadOrGenerateSituations();
             setStep("studio");
           } catch (e) { setError(msg(e)); } finally { setBusy(false); }
@@ -121,17 +143,7 @@ export default function Onboarding() {
           apiFetch("/api/icp").then((r) => r.json()).catch(() => ({})),
           apiFetch("/api/settings").then((r) => r.json()).catch(() => ({})),
         ]);
-        const i = icp.icp;
-        if (i) {
-          if (i.geographies?.length) setGeos(i.geographies.join(", "));
-          if (i.industries?.length) setIndustries(i.industries.join(", "));
-          if (i.excludedIndustries?.length) setExcluded(i.excludedIndustries.join(", "));
-          if (i.dailyTarget) setPerSignal(i.dailyTarget);
-          const idx = SIZE_RANGES.findIndex((r) => r.min === (i.sizeMin ?? null) && r.max === (i.sizeMax ?? null));
-          if (idx >= 0) setSizeIdx(idx);
-        } else if (p.industries?.length) {
-          setIndustries(p.industries.join(", "));
-        }
+        applySavedIcp(icp.icp, p.industries);
         const cc = settings.settings?.contactCriteria;
         if (cc?.jobLevels?.length) setLevels(cc.jobLevels);
         if (cc?.jobFunctions?.length) setFunctions(cc.jobFunctions);
@@ -140,8 +152,20 @@ export default function Onboarding() {
     })();
   }, []);
 
+  function applySavedIcp(i: { geographies?: string[]; industries?: string[]; excludedIndustries?: string[]; dailyTarget?: number; sizeMin?: number | null; sizeMax?: number | null } | null | undefined, fallbackIndustries?: string[]) {
+    if (i) {
+      if (i.geographies?.length) setGeos(i.geographies.join(", "));
+      if (i.industries?.length) setIndustries(i.industries.join(", "));
+      else if (fallbackIndustries?.length) setIndustries(fallbackIndustries.join(", "));
+      if (i.excludedIndustries?.length) setExcluded(i.excludedIndustries.join(", "));
+      if (i.dailyTarget) setPerSignal(i.dailyTarget);
+      const idx = sizeIndexFor(i.sizeMin ?? null, i.sizeMax ?? null);
+      if (idx >= 0) setSizeIdx(idx);
+    } else if (fallbackIndustries?.length) setIndustries(fallbackIndustries.join(", "));
+  }
+
   function cycleMsgs(_msgs: string[]) {
-    setBusyMsg("Researching your company with Parallel");
+    setBusyMsg("Researching your company");
     return () => {};
   }
 
@@ -171,7 +195,8 @@ export default function Onboarding() {
         target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
         buyer_personas: pr.buyerPersonas, industries: pr.industries,
       } : null);
-      if (pr?.industries?.length) setIndustries(pr.industries.join(", "));
+      const icpRes = await apiFetch("/api/icp").then((r) => r.json()).catch(() => ({}));
+      applySavedIcp(icpRes.icp, pr?.industries);
 
       await apiJson("/api/seller", {
         method: "PATCH", headers: { "content-type": "application/json" },

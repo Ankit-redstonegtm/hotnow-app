@@ -57,14 +57,12 @@ const worker = await bundle("src/lib/background/worker.ts", {
   "@/lib/engine": `const t=globalThis.__backgroundTest;
     export const startResearch=async()=>{t.starts++;return {taskId:'provider-task'}};
     export const finishResearch=async()=>{if(t.transient)throw new TypeError('fetch failed');return t.finish};
-    export const startSituations=async()=>({taskId:'signal-task'});
-    export const finishSituations=async()=>null;
-    export const defaultIcp=()=>({});
     export const launchDiscovery=async()=>{t.launches++;return {runId:'provider-discovery'}};`,
   "@/lib/db/repo": `const t=globalThis.__backgroundTest;
     export const updateSellerProfile=async(_,id,fields)=>Object.assign(t.tables.seller_profiles.find(r=>r.id===id),fields);
     export const updateRun=async(_,id,fields)=>Object.assign(t.tables.discovery_runs.find(r=>r.id===id),fields);
-    export const upsertIcp=async()=>{};export const replaceSituations=async()=>{};
+    export const upsertIcp=async()=>{};
+    export const replaceSituations=async(_db,_id,situations)=>{t.replaced=situations};
     export const getIcp=async()=>null;export const getFreshPrewarm=async()=>null;
     export const getSituations=async()=>[{id:'signal',name:'signal'}];`,
   "@/lib/discovery/worker": `const t=globalThis.__backgroundTest;
@@ -77,9 +75,13 @@ tables.seller_profiles.push(p);
 await check("research is launched by worker once, then persisted without a page request", async () => {
   await worker.tick(); await drain(); assert.equal(p.research_status, "running"); assert.equal(globalThis.__backgroundTest.starts, 1);
   await worker.tick(); await drain(); assert.equal(globalThis.__backgroundTest.starts, 1);
-  globalThis.__backgroundTest.finish = { companyName: "Offline company", industries: [], buyerPersonas: [] };
+  globalThis.__backgroundTest.finish = {
+    profile: { domain: "example.invalid", companyName: "Offline company", productDescription: "", targetCustomers: "", problemsSolved: "", buyerPersonas: [], industries: [] },
+    icp: { geographies: [], industries: [], excludedIndustries: [], sizeMin: null, sizeMax: null, dailyTarget: 5 },
+    situations: [{ name: "Expansion", description: "", demandHypothesis: "", observableIndicators: [], evidenceSources: [], discoveryObjective: "Find buyers", matchConditions: [], generator: "base", source: "ai" }],
+  };
   await worker.tick(); await drain(); assert.equal(p.research_status, "done"); assert.equal(p.company_name, "Offline company");
-  assert.equal(p.situations_status, "queued"); p.situations_status = "done";
+  assert.equal(p.situations_status, "done"); assert.equal(globalThis.__backgroundTest.replaced.length, 1);
 });
 await check("temporary API failures keep research running for retry", async () => {
   p.research_status = "running"; globalThis.__backgroundTest.transient = true;
@@ -144,4 +146,49 @@ try {
   if (savedSecret === undefined) delete process.env.PARALLEL_WEBHOOK_SECRET; else process.env.PARALLEL_WEBHOOK_SECRET = savedSecret;
   delete globalThis.__webhookTest;
 }
+const { mapClayIntelligence, parseEmployeeRange } = await bundle("src/lib/engine/clay-map.ts");
+const { parseRoutineItemResult } = await bundle("src/lib/providers/clay.ts");
+await check("Clay result_json maps to a seller, ICP, and FindAll-ready situations", () => {
+  const fixture = {
+    seller: {
+      domain: "https://www.acme.com/about", company_name: "Acme",
+      description: "Routing software for field teams.", products_services: ["Routing"],
+      value_proposition: "Cuts windshield time.", target_industries: ["Field services"],
+      target_company_types: ["Regional service contractors"], target_geographies: ["United States"],
+      buyer_personas: ["VP Operations"],
+    },
+    icp: {
+      company_description: "Regional field-service operators", industries: ["HVAC"],
+      geographies: ["United States", "Canada"], employee_range: "51-200", exclusions: ["Software vendors"],
+    },
+    buying_situations: [{
+      id: "sit_1", name: "Territory expansion", description: "Opened a new branch.",
+      observable_event: "Announced a new service territory", why_it_creates_demand: "More routes to plan.",
+      evidence_to_find: ["press release"], likely_sources: ["company blog"], recency_days: 90, priority: 1,
+    }],
+  };
+  const parsed = parseRoutineItemResult({ result_json: JSON.stringify(fixture), situation_count: 1 });
+  const mapped = mapClayIntelligence(parsed, "acme.com");
+  assert.equal(mapped.profile.companyName, "Acme");
+  assert.equal(mapped.profile.targetCustomers, "Regional service contractors");
+  assert.equal(mapped.profile.problemsSolved, "Cuts windshield time.");
+  assert.deepEqual(mapped.profile.buyerPersonas, ["VP Operations"]);
+  assert.deepEqual(mapped.icp.industries, ["HVAC"]);
+  assert.deepEqual(mapped.icp.geographies, ["United States", "Canada"]);
+  assert.deepEqual(mapped.icp.excludedIndustries, ["Software vendors"]);
+  assert.equal(mapped.icp.sizeMin, 51); assert.equal(mapped.icp.sizeMax, 200);
+  assert.equal(mapped.situations.length, 1);
+  const situation = mapped.situations[0];
+  assert.equal(situation.generator, "base");
+  assert.equal(situation.source, "ai");
+  assert.match(situation.discoveryObjective, /Announced a new service territory/);
+  assert.match(situation.discoveryObjective, /HVAC/);
+  assert.match(situation.discoveryObjective, /Exclude software\/SaaS vendors/);
+  assert.match(situation.discoveryObjective, /last 90 days/);
+  assert.deepEqual(situation.matchConditions.map(c => c.name), ["situation_match", "end_operator", "recency"]);
+  assert.match(situation.matchConditions[2].description, /\d{4}-\d{2}-\d{2}/);
+  assert.deepEqual(parseEmployeeRange("1,000+"), { sizeMin: 1000, sizeMax: null });
+  assert.deepEqual(parseEmployeeRange("under 50"), { sizeMin: null, sizeMax: 50 });
+  assert.throws(() => mapClayIntelligence({ seller: fixture.seller, buying_situations: [] }, "acme.com"), /no buying situations/);
+});
 console.log(`${checks} offline background checks passed.`);

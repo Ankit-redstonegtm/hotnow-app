@@ -134,7 +134,7 @@ try {
       }
       ok(await admin.from('discovery_runs').delete().eq('id', row.id));
     });
-    await check('company research is persisted before any Parallel call', async () => {
+    await check('company research is persisted before any provider call', async () => {
       const result = await api(A, '/api/seller/research', first, { domain: 'offline-' + randomUUID() + '.invalid' }, 202);
       const row = ok(await admin.from('seller_profiles').select('*').eq('id', result.profileId).single());
       assert.equal(row.research_status, 'queued'); assert.equal(row.research_task_id, null);

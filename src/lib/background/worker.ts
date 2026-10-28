@@ -1,11 +1,11 @@
 // Durable queue state lives in Supabase. Run this in a separate process, never a
 // request handler or browser timer. A bounded pool avoids one slow job blocking others.
 import { createAdminClient } from "@/lib/supabase/admin";
-import { startResearch, finishResearch, startSituations, finishSituations, defaultIcp, launchDiscovery } from "@/lib/engine";
+import { startResearch, finishResearch, launchDiscovery, type SellerIntelligence } from "@/lib/engine";
 import { updateSellerProfile, upsertIcp, replaceSituations, getIcp, getSituations, updateRun, getFreshPrewarm } from "@/lib/db/repo";
 import { ingestRun, notifyIfWaveComplete, toSituation } from "@/lib/discovery/worker";
 import { discoveryWebhookUrl } from "@/lib/parallel-webhook";
-import { isTransientParallelError } from "@/lib/providers/parallel";
+import { isTransientClayError } from "@/lib/providers/clay";
 
 import { claimEnrichmentJobs, processEnrichmentJob } from "./jobs";
 const active = new Set<string>();
@@ -27,48 +27,50 @@ async function profileJob(row: any, kind: "research" | "situations") {
         .eq("id", row.id).eq(statusKey, "queued").select("id"));
       if (!claimed.length) return;
       state = "starting";
-      if (kind === "research") {
-        const description = row.raw_research?._background?.description;
-        const prewarm = !description ? await getFreshPrewarm(db, row.domain, 30 * 60 * 1000) : null;
-        const taskId = prewarm?.task_id || (await startResearch(row.domain, description)).taskId;
-        await updateSellerProfile(db, row.id, { [taskKey]: taskId, [statusKey]: "running" });
-      } else {
-        const result = await startSituations({ domain: row.domain, companyName: row.company_name || row.domain,
-          productDescription: row.product_description || "", targetCustomers: row.target_customers || "",
-          problemsSolved: row.problems_solved || "", buyerPersonas: row.buyer_personas || [], industries: row.industries || [] });
-        if (result.situations) {
-          await replaceSituations(db, row.id, result.situations);
-          await updateSellerProfile(db, row.id, { [statusKey]: "done", [taskKey]: null });
-        } else await updateSellerProfile(db, row.id, { [taskKey]: result.taskId, [statusKey]: "running" });
-      }
+      // Clay's input is the domain only, so a signup prewarm is reusable even when
+      // the user also typed a description. Regenerating signals starts a new run.
+      const prewarm = kind === "research" ? await getFreshPrewarm(db, row.domain, 30 * 60 * 1000) : null;
+      const taskId = prewarm?.task_id || (await startResearch(row.domain, { itemId: row.id })).taskId;
+      await updateSellerProfile(db, row.id, { [taskKey]: taskId, [statusKey]: "running" });
       return;
     }
     if (state === "starting") {
       // An interrupted provider POST may have succeeded. Never automatically spend twice.
-      if (Date.now() - Date.parse(row.updated_at) > 5 * 60_000) throw new Error("Launch interrupted. Check Parallel before retrying.");
+      if (Date.now() - Date.parse(row.updated_at) > 5 * 60_000) throw new Error("Launch interrupted. Check Clay before retrying.");
       return;
     }
     if (!row[taskKey]) throw new Error("Missing provider task ID. Please retry.");
-    if (kind === "research") {
-      const profile = await finishResearch(row[taskKey], row.domain);
-      if (!profile) return;
-      await upsertIcp(db, row.id, defaultIcp(profile));
-      await updateSellerProfile(db, row.id, { company_name: profile.companyName, product_description: profile.productDescription,
-        target_customers: profile.targetCustomers, problems_solved: profile.problemsSolved,
-        buyer_personas: profile.buyerPersonas, industries: profile.industries, raw_research: profile.raw,
-        research_status: "done", ...(row.situations_status === "none" ? { situations_status: "queued" } : {}) });
-    } else {
-      const situations = await finishSituations(row[taskKey]);
-      if (!situations) return;
-      await replaceSituations(db, row.id, situations);
-      await updateSellerProfile(db, row.id, { situations_status: "done", situations_task_id: null });
-    }
+    const intelligence = await finishResearch(row[taskKey], row.domain);
+    if (!intelligence) return;
+    await persistIntelligence(db, row, intelligence);
   } catch (error) {
-    if (state !== "starting" && isTransientParallelError(error)) return;
+    if (state !== "starting" && isTransientClayError(error)) return;
     await updateSellerProfile(db, row.id, { [statusKey]: "failed",
       raw_research: { ...row.raw_research, _background: { ...row.raw_research?._background,
         [`${kind}Error`]: error instanceof Error ? error.message : "Background task failed" } } });
   }
+}
+
+async function persistIntelligence(db: ReturnType<typeof createAdminClient>, row: any, intelligence: SellerIntelligence) {
+  const noted = row.raw_research?._background?.description;
+  const productDescription = intelligence.profile.productDescription || (typeof noted === "string" ? noted.trim() : "");
+  const background = row.raw_research?._background;
+  const base = intelligence.profile.raw && typeof intelligence.profile.raw === "object" ? intelligence.profile.raw as Record<string, unknown> : {};
+  const existing = await getIcp(db, row.id);
+  await upsertIcp(db, row.id, { ...intelligence.icp, dailyTarget: existing?.dailyTarget ?? intelligence.icp.dailyTarget });
+  await replaceSituations(db, row.id, intelligence.situations);
+  await updateSellerProfile(db, row.id, {
+    company_name: intelligence.profile.companyName,
+    product_description: productDescription,
+    target_customers: intelligence.profile.targetCustomers,
+    problems_solved: intelligence.profile.problemsSolved,
+    buyer_personas: intelligence.profile.buyerPersonas,
+    industries: intelligence.profile.industries,
+    raw_research: background ? { ...base, _background: background } : intelligence.profile.raw ?? null,
+    research_status: "done",
+    situations_status: "done",
+    situations_task_id: null,
+  });
 }
 
 async function discoveryJob(row: any) {
@@ -104,9 +106,15 @@ export async function tick() {
     checked(db.from("discovery_runs").select("*").in("status", ["queued", "running"]).order("requested_at")),
   ]);
   const jobs: { id: string; run: () => Promise<void> }[] = [];
-  for (const row of profiles) for (const kind of ["research", "situations"] as const)
-    if (["queued", "starting", "running", "ready"].includes(row[`${kind}_status`]))
+  for (const row of profiles) {
+    const researchLive = ["queued", "starting", "running", "ready"].includes(row.research_status);
+    for (const kind of ["research", "situations"] as const) {
+      if (!["queued", "starting", "running", "ready"].includes(row[`${kind}_status`])) continue;
+      // One Clay run writes the seller and the situations. Don't start a second while research is in flight.
+      if (kind === "situations" && researchLive) continue;
       jobs.push({ id: `${row.id}:${kind}`, run: () => profileJob(row, kind) });
+    }
+  }
   for (const row of runs) jobs.push({ id: row.id, run: () => discoveryJob(row) });
   // Round-robin checks: slow, unfinished provider runs must not starve later users.
   const liveIds = new Set(jobs.map(job => job.id));

@@ -35,8 +35,8 @@ export async function askJSON<T = unknown>(opts: {
 
 /**
  * Schema-bound JSON reasoning that works for ALL providers, including Parallel's
- * Task API (which requires an output json_schema). Stage B uses this so it runs
- * on whatever key is available.
+ * Task API (which requires an output json_schema). Seller research and buying
+ * situations use Clay instead of this helper.
  */
 export async function reasonWithSchema<T = unknown>(opts: {
   system: string;

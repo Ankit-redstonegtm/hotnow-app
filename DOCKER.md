@@ -102,7 +102,7 @@ Agent activity panel and header badge share one authenticated AG-UI SSE feed
 per dashboard tab. The feed checks saved state every three seconds; provider
 checks remain in the worker. It restores a fresh snapshot after reconnect and
 keeps a 15-second HTTP fallback while disconnected. Requests enqueue work
-and return HTTP 202; they do not wait for Parallel research to finish.
+and return HTTP 202; they do not wait for Clay research to finish.
 
 Parallel cannot deliver webhooks to localhost. Local use works through the
 separate worker. For webhooks, deploy the app and worker on an always-on host,

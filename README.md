@@ -17,7 +17,7 @@ Open http://localhost:3000. The frontend and backend use one Next.js server.
 The launcher also starts a background worker for research, signals, and discovery.
 Overview shows saved task progress through a shared AG-UI event stream, and work continues when
 you navigate away or close the browser. Docker Compose starts both services.
-Fill `.env.local` to connect Supabase cloud, Parallel AI, and Blitz. Until then,
+Fill `.env.local` to connect Supabase cloud, Clay (seller research), Parallel AI (company discovery), and Blitz. Until then,
 the app shows a setup screen. Never commit credentials.
 
 Each user can save multiple seller domains and switch company workspaces from

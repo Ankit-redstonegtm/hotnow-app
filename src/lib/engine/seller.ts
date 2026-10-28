@@ -1,104 +1,47 @@
-// Stage A - Seller understanding. Researches a domain with Parallel Task API and
-// returns a structured SellerProfile. If research is thin, the caller should ask
-// the user for a short product description and re-run with it as additional input.
+// Stage A+B - Seller intelligence. One Clay routine returns the seller, ICP, and
+// buying situations. FindAll objectives are synthesized in clay-map.ts.
+// The routine input is seller_domain only; a user-typed description is not sent.
 
-import { taskRun, taskCreate, taskCheck } from "../providers/parallel";
+import { LIMITS } from "./config";
+import { mapClayIntelligence, type SellerIntelligence } from "./clay-map";
+import { checkSellerIntelligence, isTransientClayError, startSellerIntelligence } from "../providers/clay";
 import type { SellerProfile } from "./types";
 import { normalizeDomain } from "../util/domain";
 
-const SELLER_SCHEMA = {
-  type: "object",
-  properties: {
-    company_name: { type: "string", description: "The company's name" },
-    product_description: {
-      type: "string",
-      description: "One or two sentences on what the company sells / what the product does",
-    },
-    target_customers: {
-      type: "string",
-      description: "The kinds of organizations that buy this product",
-    },
-    problems_solved: {
-      type: "string",
-      description: "The core problems the product solves for its buyers",
-    },
-    buyer_personas: {
-      type: "array",
-      items: { type: "string" },
-      description: "Job titles / roles of the people who buy or champion this product",
-    },
-    industries: {
-      type: "array",
-      items: { type: "string" },
-      description: "Industries where the product's buyers typically operate",
-    },
-  },
-  required: ["company_name", "product_description", "target_customers", "problems_solved"],
-} as const;
+export type { SellerIntelligence };
 
-export async function researchCompany(
-  domain: string,
-  userDescription?: string,
-): Promise<SellerProfile> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function startResearch(domain: string, opts?: { itemId?: string }): Promise<{ taskId: string; normalizedDomain: string }> {
   const normalized = normalizeDomain(domain);
-  const input: Record<string, unknown> = { domain: normalized, website: `https://${normalized}` };
-  if (userDescription) input.seller_provided_description = userDescription;
-
-  const { content, raw } = await taskRun<any>({
-    input,
-    jsonSchema: SELLER_SCHEMA as unknown as Record<string, unknown>,
-    processor: "core",
-  });
-
-  return {
-    domain: normalized,
-    companyName: content.company_name || normalized,
-    productDescription: content.product_description || userDescription || "",
-    targetCustomers: content.target_customers || "",
-    problemsSolved: content.problems_solved || "",
-    buyerPersonas: arr(content.buyer_personas),
-    industries: arr(content.industries),
-    raw,
-  };
-}
-
-function arr(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map(String).filter(Boolean);
-  if (typeof v === "string" && v.trim()) return [v.trim()];
-  return [];
-}
-
-// --- async variant (for serverless: create now, poll later) ---
-function researchInput(domain: string, userDescription?: string) {
-  const input: Record<string, unknown> = { domain, website: `https://${domain}` };
-  if (userDescription) input.seller_provided_description = userDescription;
-  return input;
-}
-
-export async function startResearch(domain: string, userDescription?: string): Promise<{ taskId: string; normalizedDomain: string }> {
-  const normalized = normalizeDomain(domain);
-  const { runId } = await taskCreate({
-    input: researchInput(normalized, userDescription),
-    jsonSchema: SELLER_SCHEMA as unknown as Record<string, unknown>,
-    processor: "core",
-  });
+  const { runId } = await startSellerIntelligence(normalized, opts?.itemId || crypto.randomUUID());
   return { taskId: runId, normalizedDomain: normalized };
 }
 
-/** Returns the profile when done, null if still running. Throws if the task failed. */
-export async function finishResearch(taskId: string, normalizedDomain: string): Promise<SellerProfile | null> {
-  const r = await taskCheck<any>(taskId);
-  if (r.failed) throw new Error("Seller research failed");
-  if (!r.done) return null;
-  const content = r.content ?? {};
-  return {
-    domain: normalizedDomain,
-    companyName: content.company_name || normalizedDomain,
-    productDescription: content.product_description || "",
-    targetCustomers: content.target_customers || "",
-    problemsSolved: content.problems_solved || "",
-    buyerPersonas: arr(content.buyer_personas),
-    industries: arr(content.industries),
-    raw: r,
-  };
+/** Returns seller, ICP, and situations when the routine is done; null while it is still running. */
+export async function finishResearch(taskId: string, normalizedDomain: string): Promise<SellerIntelligence | null> {
+  const check = await checkSellerIntelligence(taskId);
+  if (!check.done) return null;
+  const domain = normalizeDomain(normalizedDomain);
+  return mapClayIntelligence(check.payload, domain, { provider: "clay", result: check.payload, routine_response: check.raw });
+}
+
+/** Blocking research for scripts. The worker uses startResearch + finishResearch. */
+export async function researchSeller(domain: string): Promise<SellerIntelligence> {
+  const { taskId, normalizedDomain } = await startResearch(domain);
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    try {
+      const result = await finishResearch(taskId, normalizedDomain);
+      if (result) return result;
+    } catch (error) {
+      if (!isTransientClayError(error)) throw error;
+    }
+    await sleep(LIMITS.pollIntervalMs);
+  }
+  throw new Error(`Clay seller research timed out for ${normalizedDomain}`);
+}
+
+export async function researchCompany(domain: string): Promise<SellerProfile> {
+  return (await researchSeller(domain)).profile;
 }

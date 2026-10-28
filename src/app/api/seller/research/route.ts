@@ -42,10 +42,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: existing.research_status === "done" ? "done" : "running", profileId: existing.id, existing: true });
     }
 
-    if (!process.env.PARALLEL_API_KEY?.trim()) {
+    if (!process.env.CLAY_API_KEY?.trim()) {
       return NextResponse.json({
-        code: "PARALLEL_API_KEY_MISSING",
-        error: "Company research requires Parallel AI. Add PARALLEL_API_KEY to .env.local, then recreate the Docker container to load it. Supabase credentials only provide login and database access.",
+        code: "CLAY_API_KEY_MISSING",
+        error: "Company research requires Clay. Add CLAY_API_KEY to .env.local, then recreate the Docker container to load it. Supabase credentials only provide login and database access.",
       }, { status: 503 });
     }
 

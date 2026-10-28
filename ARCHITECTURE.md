@@ -50,8 +50,9 @@ to the internet. The Compose configuration binds only to this computer.
 | Tailwind CSS 4 + PostCSS | Styling; Webpack builds the application. |
 | Supabase JS + SSR SDKs | Authentication, browser/server clients, and database queries. |
 | PostgreSQL through Supabase | Persistent relational data, constraints, indexes, and row-level security. |
-| Parallel AI REST APIs | Seller research, company discovery, and fallback website search. |
-| Gemini / Anthropic SDKs | Optional alternatives for generating buying signals. |
+| Clay Public Routines API | Seller research and buying situations, one routine run per domain. |
+| Parallel AI REST APIs | Company discovery (FindAll) and fallback website search. |
+| Gemini / Anthropic SDKs | Optional reasoning helpers. Seller research does not call them. |
 | Zod | Declared dependency; do not assume every route validates input with it. |
 | pnpm + lockfile | Installs a reproducible set of dependencies. |
 | PGlite | Development-only embedded PostgreSQL engine for schema/access-control tests. It is not the application's database. |
@@ -179,9 +180,11 @@ password, session token, company domain, or OAuth authorization code.
 | `NEXT_PUBLIC_SUPABASE_URL` | Public | Which Supabase project to contact; required for login/data. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Supabase publishable key, or legacy anon key. RLS still governs data access. Required. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server secret | Supabase secret key, or legacy service-role key. Required for this app's signup and admin ingestion. Bypasses RLS. |
-| `PARALLEL_API_KEY` | Server secret | Website research, discovery, and Parallel-based signal generation. |
+| `CLAY_API_KEY` | Server secret | Seller research and buying situations. Required before research is queued. |
+| `CLAY_ROUTINE_ID` | Ordinary setting | Clay routine id. Defaults to `workflow:wf_0tmxbl8enV2ZTXSfktn` (HotNow — Seller Intelligence v1). |
+| `PARALLEL_API_KEY` | Server secret | Company discovery (FindAll) and official-domain search. |
 | `BLITZ_API_KEY` | Server secret | Contact sourcing and email lookup. |
-| `LLM_PROVIDER` | Ordinary setting | `parallel`, `gemini`, or `anthropic`. Default setup uses Parallel. |
+| `LLM_PROVIDER` | Ordinary setting | `parallel`, `gemini`, or `anthropic`. Not used for seller research. |
 | `GEMINI_API_KEY` | Server secret | Optional signal-generation provider when Gemini is selected. `GOOGLE_API_KEY` is also accepted by the dispatcher. |
 | `ANTHROPIC_API_KEY` | Server secret | Optional signal-generation provider when Anthropic is selected. |
 | `PARALLEL_WEBHOOK_SECRET` | Server secret | Verifies webhook signatures on public deployments. Different from the Parallel API key. |
@@ -209,16 +212,18 @@ server-key changes need container recreation with the updated environment.
 ## 7. What happens during a search
 
 1. Optional prewarm starts domain-only research while the user signs up.
-2. Seller research produces a company/product summary, buyers, and industries.
-3. The user reviews the summary. AI proposes buying situations: observable events
-   that could create demand for the seller's product.
+2. One Clay routine produces the company summary, ICP, and buying situations.
+3. The user reviews the summary and the situations: observable events that could
+   create demand for the seller's product. HotNow adds the FindAll objective and
+   match conditions Clay does not return.
 4. The user selects signals and sets company/contact criteria.
 5. The backend reserves queued discovery records and returns HTTP 202 immediately.
-6. A dedicated worker launches Parallel and checks saved tasks every five seconds.
-   Signed webhooks update task readiness and discovery counters on public HTTPS
-   hosting. Worker checks are also used locally and for missed callbacks.
-   Research automatically queues initial buying-signal generation. Overview and
-   the header badge read persisted progress; navigation does not stop processing.
+6. A dedicated worker starts the Clay routine, then launches Parallel FindAll for
+   discovery, and checks saved tasks every five seconds. Signed Parallel webhooks
+   update discovery counters on public HTTPS hosting. Worker checks are also used
+   locally and for missed callbacks. The same Clay run writes situations, so
+   research does not queue a second signal-generation task. Overview and the
+   header badge read persisted progress; navigation does not stop processing.
 7. The ingestion worker checks match status, citations, and evidence freshness,
    resolves domains, and saves opportunities and supporting evidence.
 8. Blitz can source decision makers and find emails. Title/seniority rules assign
@@ -294,7 +299,8 @@ flowchart LR
     API -->|202 + saved task ID| User
     API --> DB[(Supabase PostgreSQL + RLS)]
     DB --> Worker[Background worker: bounded pool]
-    Worker --> Parallel[Parallel research / FindAll]
+    Worker --> Clay[Clay seller intelligence]
+    Worker --> Parallel[Parallel FindAll]
     Worker --> Blitz[Blitz contacts / email]
     Parallel -->|Signed webhook on public HTTPS| Hook[Webhook receiver]
     Hook -->|Readiness and cumulative counts| DB
@@ -443,8 +449,8 @@ lookups normally run against the discovered customers' domains, not the seller's
 
 | Stage | Current implementation | Output and next action |
 | --- | --- | --- |
-| Seller research | `src/lib/engine/seller.ts`: Parallel Task, processor `core`; input is domain, website, optional seller description. The JSON schema's field descriptions act as the research prompt. | Company name, product description, target customers, problems, buyer personas, industries. The worker queues situation generation. |
-| Signal planning | `src/lib/engine/situations.ts`: `SYSTEM` plus `buildPrompt`; default five situations. With Parallel configured this is another `core` Task. Gemini/Anthropic are optional alternatives. | Buyer-oriented discovery objective, observable indicators, demand hypothesis, evidence types, boolean conditions, generator recommendation. |
+| Seller research | `src/lib/providers/clay.ts` runs routine `workflow:wf_0tmxbl8enV2ZTXSfktn` with `{ seller_domain }`, then polls `GET /routines/run/{id}/results`. | `result_json` with seller, ICP, and buying situations. The worker saves all three together. |
+| Signal planning | `src/lib/engine/clay-map.ts` reads Clay situations and synthesizes a buyer-world `discoveryObjective` plus end-operator and recency `matchConditions`. Generator defaults to `base`. | FindAll-ready situations. Parallel Task and optional LLMs are not used for this stage. |
 | Company discovery | `src/lib/engine/discovery.ts`: each enabled situation becomes a FindAll run; up to five situations per launch. ICP geography/industry preferences are appended to the objective. | Candidates and evaluated matches, with basis/citations. |
 | Qualification | `src/lib/engine/qualify.ts`: application rules, not another LLM prompt. | Keep matched candidates with citations; reject dated evidence older than the default 240-day window. Resolve official domain where the URL is a known directory. |
 | Ingestion | `src/lib/discovery/worker.ts`: wait for a terminal provider state, fetch results, qualify and save. | Companies, opportunities and evidence in Supabase. Rejection reasons are not persisted by this path. |
