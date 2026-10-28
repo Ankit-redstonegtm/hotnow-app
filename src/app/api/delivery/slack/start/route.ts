@@ -16,7 +16,7 @@ export async function POST(req: Request) {
       v: 1, uid: user.id, profileId: profile.id, provider: "slack",
       exp: Date.now() + 10 * 60 * 1000, nonce, returnTo,
     });
-    const response = NextResponse.json({ url: slackAuthorizeUrl(redirectUri(req, "slack"), state) });
+    const response = NextResponse.json({ url: slackAuthorizeUrl(redirectUri(req), state) });
     response.cookies.set("hotnow_oauth_nonce", nonce, cookieOptions(600));
     response.cookies.set("hotnow_workspace", profile.id, cookieOptions());
     return response;

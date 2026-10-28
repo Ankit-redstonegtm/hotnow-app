@@ -1,8 +1,7 @@
 # HotNow
 
 B2B opportunity discovery with evidence, buying signals, contact sourcing, saved
-lists, CSV exports, and lead delivery to Slack, Google Sheets, Microsoft Teams,
-and Telegram.
+lists, CSV exports, and optional Slack delivery for new opportunities.
 
 Start here: [Local and cloud setup](LOCAL_SETUP.md).
 
@@ -31,8 +30,8 @@ The private trigger schema must stay unexposed. For existing installations, appl
 [002_background_jobs.sql](supabase/migrations/002_background_jobs.sql) to enable
 durable contact/email enrichment, task cancellation, retries and crash recovery.
 Apply [004_delivery_connections.sql](supabase/migrations/004_delivery_connections.sql)
-before connecting Slack, Google Sheets, Teams, or Telegram. Provider app setup
-and environment variables are in [Lead delivery](DELIVERY.md).
+before connecting Slack. Google Sheets, Teams, and Telegram are deferred.
+Provider setup is in [Lead delivery](DELIVERY.md).
 
 ## Checks
 

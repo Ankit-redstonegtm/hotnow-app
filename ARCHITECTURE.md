@@ -28,7 +28,7 @@ flowchart TD
     Worker -->|"Server API key"| Parallel["Parallel AI: research and discovery"]
     Parallel -. "Completion webhook on public HTTPS hosting" .-> App
     App -->|"Server API key"| Blitz["Blitz: people and email lookup"]
-    App -->|"OAuth tokens or workspace webhooks"| Destinations["Slack, Google Sheets, Teams, Telegram"]
+    App -->|"Slack OAuth or legacy webhook"| Slack["Slack channel"]
 ```
 
 The browser is the frontend. Next.js route handlers are the backend. They are in
@@ -87,7 +87,7 @@ contains a trigger function for enforcing discovery limits and stays unexposed.
 | `lists` | Named company/contact lists in a workspace. |
 | `list_items` | References to the opportunities or contacts in a list. |
 | `prewarm_research` | Temporary research-task references started before signup; server access only. |
-| `delivery_connections` | Per-workspace destination status for Slack, Google Sheets, Teams, and Telegram. Users can read their own rows. |
+| `delivery_connections` | Per-workspace Slack connection status. Users can read their own rows. Google Sheets, Teams, and Telegram are deferred. |
 | `delivery_secrets` | Encrypted provider credentials. No access for signed-in users; the server writes them after an ownership check. |
 
 ```mermaid
@@ -190,22 +190,17 @@ password, session token, company domain, or OAuth authorization code.
 | `HOTNOW_DB_SCHEMA` | Ordinary setting | Server database namespace, normally `hotnow`. |
 | `NEXT_PUBLIC_HOTNOW_DB_SCHEMA` | Public setting | Matching browser namespace; normally `hotnow`. |
 | `APP_URL` | Ordinary setting | Public HTTPS app URL for provider webhooks and OAuth redirects. Native local default is `http://localhost:3000`. OAuth redirect URLs are derived from this origin. |
-| `DELIVERY_TOKEN_KEY` | Server secret | Encrypts Slack, Google, and Teams credentials at rest. Required before those three destinations can be connected. |
-| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Server secret | Slack app OAuth client. Not a user webhook. |
-| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Server secret | Google Cloud OAuth client for Sheets. Separate from Supabase Google sign-in. |
-| `TELEGRAM_BOT_TOKEN` | Server secret | Bot token from BotFather. |
-| `TELEGRAM_BOT_USERNAME` | Ordinary setting | Optional. The bot username without `@`. Discovered from Telegram when omitted. |
-| `TELEGRAM_WEBHOOK_SECRET` | Server secret | Verifies Telegram's webhook header on public HTTPS. Not required for localhost polling. |
+| `DELIVERY_TOKEN_KEY` | Server secret | Encrypts the Slack bot token at rest. Required only to connect Slack. |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Server secret | Slack app OAuth client. Not a user webhook. The app runs without them. |
 | `HOTNOW_PORT` | Compose setting | Host port for the Docker app; default 3001. |
 | `DOCKER_APP_URL` | Compose setting | Value Compose supplies as the container's `APP_URL`; default `http://localhost:3001`. |
 
-Slack, Google Sheets, Microsoft Teams, and Telegram are connected per workspace
-from onboarding (after targeting) and from Settings. Slack and Google Sheets use
-OAuth. Teams uses an incoming webhook. Telegram uses the app bot plus a Start
-link. Tokens and webhook URLs are encrypted with `DELIVERY_TOKEN_KEY` and stored
-in `delivery_secrets`, which signed-in users cannot read. A previously saved
-Slack incoming webhook still delivers until it is removed or a Slack OAuth
-channel is connected. See [Lead delivery](DELIVERY.md).
+Slack is connected per workspace from onboarding (after targeting) and from
+Settings. The bot token is encrypted with `DELIVERY_TOKEN_KEY` and stored in
+`delivery_secrets`, which signed-in users cannot read. Opportunities can also
+be downloaded as CSV. A previously saved Slack incoming webhook still delivers
+until it is removed or a Slack channel is connected. Google Sheets, Microsoft
+Teams, and Telegram are deferred. See [Lead delivery](DELIVERY.md).
 
 The names `ANON_KEY` and `SERVICE_ROLE_KEY` come from the original app; they also
 accept the current Supabase publishable and secret keys. Publishable keys are

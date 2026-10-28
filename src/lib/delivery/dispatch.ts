@@ -1,15 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { validSlackUrl } from "@/lib/validation";
-import { appBaseUrl } from "@/lib/parallel-webhook";
 import { DeliveryError } from "./errors";
-import { testLead } from "./leads";
-import { slackText, teamsText, telegramHtml } from "./messages";
-import { appendLeadRows, usableGoogleToken } from "./sheets";
+import { slackText } from "./messages";
 import { postSlackMessage, usableSlackToken } from "./slack";
 import { listConnections, patchConnection, readSecret, saveSecret, selectTargets, type DeliveryKind } from "./store";
-import { postTeams } from "./teams";
-import { sendTelegramMessage } from "./telegram";
-import type { ConnectionRow, GoogleSecret, LeadCard, Provider, SlackSecret, TeamsSecret } from "./types";
+import type { ConnectionRow, LeadCard, Provider, SlackSecret } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = SupabaseClient<any, any, any, any, any>;
@@ -73,24 +68,6 @@ export async function deliverSelected(args: {
         const usable = await usableSlackToken(stored, fetchImpl);
         if (usable.refreshed) await saveSecret(args.admin, args.profileId, "slack", usable.secret);
         await postSlackMessage(usable.token, row.external_id, slackBody, fetchImpl);
-      } else if (kind === "google_sheets") {
-        if (!args.leads.length) {
-          await note(args.admin, args.profileId, kind, null);
-          results.push({ kind, ok: true });
-          continue;
-        }
-        const stored = await readSecret<GoogleSecret>(args.admin, args.profileId, "google_sheets");
-        if (!stored || !row.external_id) throw new DeliveryError("Google Sheets is missing a spreadsheet.", 400);
-        const usable = await usableGoogleToken(stored, fetchImpl);
-        if (usable.refreshed) await saveSecret(args.admin, args.profileId, "google_sheets", usable.secret);
-        await appendLeadRows(usable.token, row.external_id, row.config.sheetName || "Leads", args.leads, fetchImpl);
-      } else if (kind === "teams") {
-        const stored = await readSecret<TeamsSecret>(args.admin, args.profileId, "teams");
-        if (!stored?.webhookUrl) throw new DeliveryError("Teams is missing a webhook.", 400);
-        await postTeams(stored.webhookUrl, "HotNow", teamsText(args.summary, args.leads), fetchImpl);
-      } else if (kind === "telegram") {
-        if (!row.external_id) throw new DeliveryError("Telegram is missing a chat.", 400);
-        await sendTelegramMessage(row.external_id, telegramHtml(args.summary, args.leads), fetchImpl);
       }
       await note(args.admin, args.profileId, kind, null);
       results.push({ kind, ok: true });
@@ -122,28 +99,14 @@ export async function sendProviderTest(
   provider: Provider,
   fetchImpl?: FetchLike,
 ) {
+  if (provider !== "slack") throw new DeliveryError("Only Slack delivery is available.", 400);
   const legacy = profile.slack_webhook_url ?? null;
   const connections = await listConnections(admin, profile.id);
   const available = selectTargets(connections, legacy);
   const summary = `HotNow is connected for ${profile.company_name || profile.domain}. New opportunities will show up here.`;
-  const base = appBaseUrl() ?? "https://app.hotnow.co";
-  if (provider === "slack") {
-    const kinds = available.filter((kind) => kind === "slack" || kind === "legacy_slack");
-    if (!kinds.length) throw new DeliveryError("Connect Slack and choose a channel first.", 400);
-    const results = await deliverSelected({ admin, profileId: profile.id, connections, kinds, summary, leads: [], legacyWebhook: legacy, fetchImpl });
-    const failed = results.find((result) => !result.ok);
-    if (failed) throw new DeliveryError(failed.error || "Test delivery failed.", 400);
-    return;
-  }
-  if (!available.includes(provider)) {
-    throw new DeliveryError(provider === "google_sheets"
-      ? "Connect Google Sheets and choose a spreadsheet first."
-      : provider === "teams"
-        ? "Paste a Teams webhook URL first."
-        : "Open Telegram and press Start first.", 400);
-  }
-  const leads = provider === "google_sheets" ? [testLead(profile.domain, base)] : [];
-  const results = await deliverSelected({ admin, profileId: profile.id, connections, kinds: [provider], summary, leads, legacyWebhook: legacy, fetchImpl });
+  const kinds = available.filter((kind) => kind === "slack" || kind === "legacy_slack");
+  if (!kinds.length) throw new DeliveryError("Connect Slack and choose a channel first.", 400);
+  const results = await deliverSelected({ admin, profileId: profile.id, connections, kinds, summary, leads: [], legacyWebhook: legacy, fetchImpl });
   const failed = results.find((result) => !result.ok);
   if (failed) throw new DeliveryError(failed.error || "Test delivery failed.", 400);
 }

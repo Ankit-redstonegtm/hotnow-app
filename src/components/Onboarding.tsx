@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/TopBar";
 import DeliveryConnections from "@/components/DeliveryConnections";
+import LeadCsvExport from "@/components/LeadCsvExport";
 
 type Step = "domain" | "studio" | "deliver";
 type Profile = {
@@ -327,18 +328,21 @@ export default function Onboarding() {
         <TopBar />
         <div className="mx-auto w-full max-w-2xl px-5 py-8 flex-1">
           <button className="text-sm font-medium" style={{ color: "var(--muted)" }} onClick={() => setStep("studio")}>← Back to targeting</button>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mt-4">Where should new leads go?</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mt-4">How should leads reach you?</h1>
           <p className="text-sm mt-2 mb-6" style={{ color: "var(--muted)" }}>
-            Connect any of these. HotNow sends each new opportunity to every place you leave on. You can change this later in Settings.
+            Connect Slack to receive new opportunities in a channel. You can also download them as a CSV.
           </p>
           {error && <div className="card p-3 mb-4 text-sm" style={{ color: "var(--accent)" }}>{error}</div>}
-          <DeliveryConnections variant="onboarding" />
+          <div className="space-y-3">
+            <DeliveryConnections variant="onboarding" />
+            <LeadCsvExport />
+          </div>
           <div className="flex flex-col sm:flex-row gap-2 mt-6">
             <button className="btn btn-primary px-6 py-3 text-base" disabled={launching} onClick={launch}>
               {launching ? "Starting the search" : "Find opportunities"}
             </button>
           </div>
-          <p className="text-xs mt-3" style={{ color: "var(--faint)" }}>You can start the search now and connect a destination later.</p>
+          <p className="text-xs mt-3" style={{ color: "var(--faint)" }}>You can start the search now and connect Slack later.</p>
         </div>
       </div>
     );

@@ -1,13 +1,8 @@
-export const PROVIDERS = ["slack", "google_sheets", "teams", "telegram"] as const;
+export const PROVIDERS = ["slack"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 export type ConnectionStatus = "pending" | "connected" | "error";
 
 export type ConnectionConfig = {
-  connectCode?: string;
-  expiresAt?: string;
-  botUsername?: string;
-  sheetName?: string;
-  spreadsheetUrl?: string;
   teamId?: string;
   teamName?: string;
 };
@@ -32,8 +27,6 @@ export type PublicConnection = {
   enabled: boolean;
   displayName: string | null;
   destinationLabel: string | null;
-  href: string | null;
-  connectUrl: string | null;
   connectedAt: string | null;
   lastError: string | null;
   ready: boolean;
@@ -46,14 +39,6 @@ export type SlackSecret = {
   expiresAt?: number;
   teamId: string;
 };
-
-export type GoogleSecret = {
-  refreshToken: string;
-  accessToken?: string;
-  expiresAt?: number;
-};
-
-export type TeamsSecret = { webhookUrl: string };
 
 export type LeadCard = {
   company: string;
@@ -68,25 +53,7 @@ export type LeadCard = {
   link: string;
 };
 
-export const SHEET_HEADERS = [
-  "Company", "Domain", "Signal", "What happened", "Why it matters",
-  "Confidence", "Evidence date", "Source", "Discovered", "Link",
-] as const;
-
 export function providerReady(provider: Provider): boolean {
-  const key = Boolean(process.env.DELIVERY_TOKEN_KEY);
-  switch (provider) {
-    case "slack":
-      return key && Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET);
-    case "google_sheets":
-      return key && Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
-    case "teams":
-      return key;
-    case "telegram":
-      return Boolean(process.env.TELEGRAM_BOT_TOKEN);
-  }
-}
-
-export function isProvider(value: string): value is Provider {
-  return (PROVIDERS as readonly string[]).includes(value);
+  if (provider !== "slack") return false;
+  return Boolean(process.env.DELIVERY_TOKEN_KEY && process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET);
 }

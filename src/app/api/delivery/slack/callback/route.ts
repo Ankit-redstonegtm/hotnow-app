@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     if (user.id !== state.uid) return back("state");
     const owned = await sb.from("seller_profiles").select("id").eq("id", state.profileId).eq("user_id", user.id).maybeSingle();
     if (owned.error || !owned.data) return back("state");
-    const exchanged = await exchangeSlackCode(url.searchParams.get("code") || "", redirectUri(req, "slack"));
+    const exchanged = await exchangeSlackCode(url.searchParams.get("code") || "", redirectUri(req));
     const admin = createAdminClient();
     const existing = await getConnection(admin, state.profileId, "slack");
     const sameTeam = Boolean(existing?.config?.teamId === exchanged.teamId && existing?.external_id);

@@ -1,11 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import type { Provider } from "./types";
 
 export type OAuthState = {
   v: 1;
   uid: string;
   profileId: string;
-  provider: "slack" | "google_sheets";
+  provider: "slack";
   exp: number;
   nonce: string;
   returnTo: string;
@@ -84,7 +83,6 @@ export function cookieOptions(maxAge?: number) {
   };
 }
 
-export function redirectUri(req: Request, provider: Extract<Provider, "slack" | "google_sheets">) {
-  const path = provider === "slack" ? "/api/delivery/slack/callback" : "/api/delivery/google/callback";
-  return `${oauthBaseUrl(req)}${path}`;
+export function redirectUri(req: Request) {
+  return `${oauthBaseUrl(req)}/api/delivery/slack/callback`;
 }

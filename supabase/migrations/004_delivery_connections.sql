@@ -6,7 +6,7 @@ begin;
 
 create table if not exists hotnow.delivery_connections (
   seller_profile_id uuid not null references hotnow.seller_profiles on delete cascade,
-  provider text not null check (provider in ('slack','google_sheets','teams','telegram')),
+  provider text not null check (provider in ('slack')),
   status text not null default 'pending' check (status in ('pending','connected','error')),
   enabled boolean not null default true,
   display_name text,
@@ -28,10 +28,6 @@ create table if not exists hotnow.delivery_secrets (
   foreign key (seller_profile_id, provider)
     references hotnow.delivery_connections (seller_profile_id, provider) on delete cascade
 );
-
-create unique index if not exists delivery_telegram_code
-  on hotnow.delivery_connections ((config->>'connectCode'))
-  where provider = 'telegram' and coalesce(config->>'connectCode', '') <> '';
 
 alter table hotnow.delivery_connections enable row level security;
 drop policy if exists read_own_delivery on hotnow.delivery_connections;

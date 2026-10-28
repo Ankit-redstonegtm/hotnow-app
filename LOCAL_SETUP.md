@@ -99,10 +99,10 @@ API key. Localhost uses worker checks because Parallel cannot reach it. See
 
 Blitz provides domain-to-LinkedIn lookup, employee sourcing, and email lookup.
 Without this key, research/discovery can work but contact sourcing cannot be
-validated. Optional lead delivery (Slack, Google Sheets, Teams, Telegram) is
-configured per company in onboarding and Settings. See [Lead delivery](DELIVERY.md).
+validated. Optional Slack delivery is configured per company in onboarding and
+Settings. Opportunities can be downloaded as CSV. See [Lead delivery](DELIVERY.md).
 Apply [004_delivery_connections.sql](supabase/migrations/004_delivery_connections.sql)
-before connecting a destination.
+before connecting Slack. Google Sheets, Teams, and Telegram are deferred.
 
 ## 5. Check configuration and restart
 

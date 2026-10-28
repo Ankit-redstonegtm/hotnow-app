@@ -2,6 +2,7 @@
 import { apiJson } from "@/lib/workspace";
 import { useEffect, useState } from "react";
 import DeliveryConnections from "@/components/DeliveryConnections";
+import LeadCsvExport from "@/components/LeadCsvExport";
 
 export default function SettingsPage() {
   const [company, setCompany] = useState("");
@@ -36,8 +37,11 @@ export default function SettingsPage() {
 
           <div>
             <h2 className="font-semibold">Lead delivery</h2>
-            <p className="text-sm mt-1 mb-4" style={{ color: "var(--muted)" }}>New opportunities are sent to every destination you leave on.</p>
-            <DeliveryConnections variant="settings" />
+            <p className="text-sm mt-1 mb-4" style={{ color: "var(--muted)" }}>Send new opportunities to Slack, or download a CSV.</p>
+            <div className="space-y-3">
+              <DeliveryConnections variant="settings" />
+              <LeadCsvExport />
+            </div>
           </div>
 
           <div className="card p-6">

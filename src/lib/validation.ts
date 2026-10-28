@@ -14,18 +14,11 @@ export function validSlackUrl(value: string) {
   } catch { return false; }
 }
 export const deliveryProviderInput = z.object({
-  provider: z.enum(["slack", "google_sheets", "teams", "telegram"]),
+  provider: z.enum(["slack"]),
 });
 export const deliveryToggleInput = deliveryProviderInput.extend({ enabled: z.boolean() });
 export const slackChannelInput = z.object({
   channelId: z.string().trim().regex(/^[CG][A-Z0-9]{8,32}$/, "Choose a Slack channel"),
-});
-export const sheetChoiceInput = z.object({
-  mode: z.enum(["create", "existing"]),
-  spreadsheetUrl: z.string().trim().max(500).optional(),
-}).refine((value) => value.mode === "create" || Boolean(value.spreadsheetUrl), { message: "Paste a Google Sheets link" });
-export const teamsConnectInput = z.object({
-  webhookUrl: z.string().trim().min(1, "Paste a Teams webhook URL").max(4000),
 });
 export const settingsInput = z.object({
   slackWebhookUrl: z.string().trim().max(512).refine(v => !v || validSlackUrl(v), { message: "Enter a valid HTTPS Slack incoming webhook URL" }).optional(),

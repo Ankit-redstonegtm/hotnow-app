@@ -35,18 +35,3 @@ export async function loadWaveLeads(admin: SB, runIds: string[], appUrl: string)
     };
   });
 }
-
-export function testLead(domain: string, appUrl: string): LeadCard {
-  return {
-    company: "HotNow connection test",
-    domain,
-    signal: "Test",
-    whatHappened: "This row confirms Google Sheets delivery is connected.",
-    whyItMatters: "You can delete this row.",
-    confidence: "",
-    evidenceDate: "",
-    sourceUrl: "",
-    discoveredAt: new Date().toISOString().slice(0, 10),
-    link: `${appUrl}/dashboard/companies`,
-  };
-}
