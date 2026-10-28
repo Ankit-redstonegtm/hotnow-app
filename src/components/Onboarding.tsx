@@ -315,10 +315,9 @@ export default function Onboarding() {
       <div className="min-h-dvh flex flex-col hero-wrap">
         <TopBar />
         <div className="flex-1 flex items-center justify-center px-5 py-10">
-          <div className="w-full max-w-xl">
+          <div className={busy ? "w-full max-w-5xl" : "w-full max-w-xl"}>
             {busy ? (
-              <><ResearchLoader msg={busyMsg} />
-              {canExplore && <div className="text-center mt-4"><Link href="/dashboard#parallel-activity" className="btn btn-primary">Continue in dashboard</Link><p className="text-xs mt-2" style={{ color: "var(--muted)" }}>Your research continues in the background. Return to setup when it finishes.</p></div>}</>
+              <ResearchWait msg={busyMsg} canExplore={canExplore} />
             ) : (
               <div className="text-center">
                 <span className="chip mb-5">Set up in under a minute</span>
@@ -535,6 +534,33 @@ export default function Onboarding() {
 
 /* ---------- small pieces ---------- */
 
+function ResearchWait({ msg, canExplore }: { msg: string; canExplore: boolean }) {
+  return (
+    <>
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="min-w-0">
+          <ResearchLoader msg={msg} />
+        </div>
+        <div className="min-w-0">
+          <DeliveryConnections
+            variant="onboarding"
+            returnTo="/onboarding?resume=1"
+            description="While we study your company, connect Slack so new opportunities arrive in a channel."
+            footnote="You can skip this and connect later."
+            defer={!canExplore}
+          />
+        </div>
+      </div>
+      {canExplore && (
+        <div className="text-center mt-4">
+          <Link href="/dashboard#parallel-activity" className="btn btn-ghost">Continue in dashboard</Link>
+          <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>Your research continues in the background. Return to setup when it finishes.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ResearchLoader({ msg }: { msg: string }) {
   return (
     <div className="card p-8 text-center">
@@ -543,7 +569,7 @@ function ResearchLoader({ msg }: { msg: string }) {
       </div>
       <p className="mt-5 font-semibold dot">{msg || "Working"}</p>
       <p className="text-sm mt-1" style={{ color: "var(--faint)" }}>This usually takes under a minute. You can keep this tab open.</p>
-      <div className="flex items-center justify-center flex-nowrap gap-1.5 mt-6 opacity-80 text-xs font-semibold" style={{ color: "var(--muted)" }}>
+      <div className="flex items-center justify-center flex-wrap gap-1.5 mt-6 opacity-80 text-xs font-semibold" style={{ color: "var(--muted)" }}>
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />Your business</span>
         <span style={{ color: "var(--faint)" }}>›</span>
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />Your buyers</span>

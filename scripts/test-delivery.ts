@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { csvText, opportunityCsvRows } from "../src/lib/csv";
 import { decryptJson, encryptJson } from "../src/lib/delivery/crypto";
 import { deliverSelected } from "../src/lib/delivery/dispatch";
-import { signState, verifyState, safeReturnPath } from "../src/lib/delivery/state";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import DeliveryConnections, { slackDetail } from "../src/components/DeliveryConnections";
+import { appRedirect, oauthReturnTarget, signState, verifyState, safeReturnPath } from "../src/lib/delivery/state";
 import { presentConnections, selectTargets } from "../src/lib/delivery/store";
 import type { ConnectionRow, LeadCard } from "../src/lib/delivery/types";
 
@@ -43,6 +46,24 @@ await check("credentials round-trip and reject tampering", () => {
 await check("OAuth state is signed, expiring, and return paths stay inside the app", () => {
   assert.equal(safeReturnPath("https://evil.example"), "/dashboard/settings");
   assert.equal(safeReturnPath("/onboarding"), "/onboarding");
+  assert.equal(safeReturnPath("/onboarding?resume=1"), "/onboarding?resume=1");
+  assert.equal(safeReturnPath("/onboarding?resume=1&next=https://evil.example"), "/dashboard/settings");
+  assert.equal(safeReturnPath("//evil.example"), "/dashboard/settings");
+  const req = new Request("http://localhost:3000/api/delivery/slack/callback");
+  const resume = appRedirect(req, "/onboarding?resume=1", { slack: "pick" });
+  assert.equal(resume.pathname, "/onboarding");
+  assert.equal(resume.searchParams.get("deliver"), null);
+  assert.equal(resume.searchParams.get("slack"), "pick");
+  assert.equal(oauthReturnTarget("/onboarding").deliver, true);
+  const deliver = appRedirect(req, "/onboarding", { connected: "slack" });
+  assert.equal(deliver.pathname, "/onboarding");
+  assert.equal(deliver.searchParams.get("deliver"), "1");
+  assert.equal(deliver.searchParams.get("connected"), "slack");
+  const resumeState = signState({
+    v: 1, uid: "user", profileId: "profile", provider: "slack", nonce: "nonce",
+    exp: Date.now() + 60_000, returnTo: "/onboarding?resume=1",
+  });
+  assert.equal(verifyState(resumeState, "slack")?.returnTo, "/onboarding?resume=1");
   const token = signState({
     v: 1, uid: "user", profileId: "profile", provider: "slack", nonce: "nonce",
     exp: Date.now() + 60_000, returnTo: "/onboarding",
@@ -54,6 +75,25 @@ await check("OAuth state is signed, expiring, and return paths stay inside the a
     exp: Date.now() - 1, returnTo: "/onboarding",
   });
   assert.equal(verifyState(expired, "slack"), null);
+});
+
+await check("research wait offers Slack without a connect button until the workspace exists", () => {
+  const encourage = "While we study your company, connect Slack so new opportunities arrive in a channel.";
+  assert.equal(slackDetail(encourage, "connected", true, false), "Slack is ready. New opportunities will arrive in your channel.");
+  assert.equal(slackDetail(encourage, "pending", false, false), "Pick the channel that should receive new opportunities.");
+  assert.equal(slackDetail(encourage, "disconnected", false, true), "Slack is not available on this server yet.");
+  assert.equal(slackDetail(undefined, "disconnected", false, true).includes("Install HotNow"), true);
+  const html = renderToStaticMarkup(createElement(DeliveryConnections, {
+    variant: "onboarding",
+    returnTo: "/onboarding?resume=1",
+    description: encourage,
+    footnote: "You can skip this and connect later.",
+    defer: true,
+  }));
+  assert.equal(html.includes(encourage), true);
+  assert.equal(html.includes("You can skip this and connect later."), true);
+  assert.equal(html.includes("Connect Slack"), false);
+  assert.equal(html.includes("not available"), false);
 });
 
 await check("only an enabled Slack channel is selected, and a paused connection does not fall back to a webhook", () => {
