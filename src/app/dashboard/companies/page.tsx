@@ -4,7 +4,7 @@ import SaveListDialog from "@/components/SaveListDialog";
 import { apiFetch, apiJson } from "@/lib/workspace";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { downloadCSV } from "@/lib/csv";
+import { downloadCSV, opportunityCsvRows } from "@/lib/csv";
 
 type Opp = {
   id: string; what_happened: string; why_it_matters: string; confidence: string; evidence_date: string | null; status: string;
@@ -42,13 +42,7 @@ export default function CompaniesPage() {
   const chosen = () => (sel.size ? opps.filter((o) => sel.has(o.id)) : opps);
 
   function exportCsv() {
-    const rows = chosen().map((o) => ({
-      company: o.companies?.name ?? "", domain: o.companies?.normalized_domain ?? "",
-      signal: o.buying_situations?.name ?? "", what_happened: o.what_happened,
-      why_it_matters: o.why_it_matters, confidence: o.confidence, evidence_date: o.evidence_date ?? "",
-      source: o.evidence?.[0]?.source_url ?? "",
-    }));
-    downloadCSV(`hotnow-companies-${new Date().toISOString().slice(0, 10)}`, rows);
+    downloadCSV(`hotnow-companies-${new Date().toISOString().slice(0, 10)}`, opportunityCsvRows(chosen()));
   }
   function saveList() { setListOpen(true); }
 

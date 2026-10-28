@@ -9,6 +9,30 @@ export function csvText(rows: Record<string, unknown>[]) {
   };
   return [headers.map(escape).join(","), ...rows.map(row => headers.map(header => escape(row[header])).join(","))].join("\r\n");
 }
+
+export type OpportunityCsvSource = {
+  what_happened?: string | null;
+  why_it_matters?: string | null;
+  confidence?: string | null;
+  evidence_date?: string | null;
+  companies?: { name?: string | null; normalized_domain?: string | null } | null;
+  buying_situations?: { name?: string | null } | null;
+  evidence?: { source_url?: string | null }[] | null;
+};
+
+export function opportunityCsvRows(opportunities: OpportunityCsvSource[]) {
+  return opportunities.map((opportunity) => ({
+    company: opportunity.companies?.name ?? "",
+    domain: opportunity.companies?.normalized_domain ?? "",
+    signal: opportunity.buying_situations?.name ?? "",
+    what_happened: opportunity.what_happened ?? "",
+    why_it_matters: opportunity.why_it_matters ?? "",
+    confidence: opportunity.confidence ?? "",
+    evidence_date: opportunity.evidence_date ?? "",
+    source: opportunity.evidence?.[0]?.source_url ?? "",
+  }));
+}
+
 export function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
   if (!rows.length) return;
   const blob = new Blob(["\ufeff" + csvText(rows)], { type: "text/csv;charset=utf-8;" });

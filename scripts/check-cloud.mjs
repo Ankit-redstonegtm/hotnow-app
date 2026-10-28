@@ -10,7 +10,7 @@ if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KE
     const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
       db: { schema: process.env.HOTNOW_DB_SCHEMA || 'hotnow' }, auth: { persistSession: false },
     });
-    for (const table of ['seller_profiles', 'buying_situations', 'icp_constraints', 'discovery_runs', 'companies', 'opportunities', 'evidence', 'contacts', 'contact_sourcing', 'lists', 'list_items', 'prewarm_research']) {
+    for (const table of ['seller_profiles', 'buying_situations', 'icp_constraints', 'discovery_runs', 'companies', 'opportunities', 'evidence', 'contacts', 'contact_sourcing', 'lists', 'list_items', 'prewarm_research', 'delivery_connections', 'delivery_secrets']) {
       const { error } = await sb.from(table).select('*', { head: true }).limit(1);
       if (error) { console.log(`FAIL ${table}: ${error.code || 'connection error'} (check migration and exposed schema)`); process.exitCode = 1; }
       else console.log(`OK ${table}`);

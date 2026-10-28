@@ -1,22 +1,20 @@
-import { validSlackUrl } from "@/lib/validation";
 import { NextResponse } from "next/server";
 import { requireUser, UnauthorizedError } from "@/lib/auth-helpers";
 import { getSellerProfileByUser, getListWithItems } from "@/lib/db/repo";
+import { deliverSelected } from "@/lib/delivery/dispatch";
+import { listConnections, selectTargets } from "@/lib/delivery/store";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
     const { sb, user } = await requireUser();
     const p = await getSellerProfileByUser(sb, user.id);
     if (!p) return NextResponse.json({ error: "no profile" }, { status: 400 });
-    const webhook = p.slack_webhook_url;
-    if (!webhook) return NextResponse.json({ error: "Add a Slack webhook URL in Settings first." }, { status: 400 });
-
-    if (!validSlackUrl(webhook)) return NextResponse.json({ error: "Add a valid Slack incoming webhook URL in Settings." }, { status: 400 });
     const { listId, test } = await req.json();
     let text: string;
 
     if (test) {
-      text = `:white_check_mark: *HotNow* is connected to this channel. New opportunities will land here.`;
+      text = "HotNow is connected to this channel. New opportunities will land here.";
     } else if (listId) {
       const { list, items } = await getListWithItems(sb, listId);
       if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
@@ -36,13 +34,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "listId or test required" }, { status: 400 });
     }
 
-    const res = await fetch(webhook, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(15000),
+    const admin = createAdminClient();
+    const legacy = typeof p.slack_webhook_url === "string" ? p.slack_webhook_url : null;
+    const connections = await listConnections(admin, p.id).catch(() => []);
+    const kinds = selectTargets(connections, legacy).filter((kind) => kind === "slack" || kind === "legacy_slack");
+    if (!kinds.length) return NextResponse.json({ error: "Connect Slack in Settings first." }, { status: 400 });
+    const results = await deliverSelected({
+      admin, profileId: p.id, connections, kinds, summary: text, leads: [], legacyWebhook: legacy,
     });
-    if (!res.ok) return NextResponse.json({ error: `Slack returned ${res.status}` }, { status: 400 });
+    const failed = results.find((result) => !result.ok);
+    if (failed) return NextResponse.json({ error: failed.error || "Slack delivery failed." }, { status: 400 });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

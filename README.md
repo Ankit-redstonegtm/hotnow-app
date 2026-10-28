@@ -1,7 +1,7 @@
 # HotNow
 
 B2B opportunity discovery with evidence, buying signals, contact sourcing, saved
-lists, CSV exports, and optional Slack notifications.
+lists, CSV exports, and optional Slack delivery for new opportunities.
 
 Start here: [Local and cloud setup](LOCAL_SETUP.md).
 
@@ -29,6 +29,9 @@ Apply it to a new Supabase project, then expose `hotnow` in Data API settings.
 The private trigger schema must stay unexposed. For existing installations, apply
 [002_background_jobs.sql](supabase/migrations/002_background_jobs.sql) to enable
 durable contact/email enrichment, task cancellation, retries and crash recovery.
+Apply [004_delivery_connections.sql](supabase/migrations/004_delivery_connections.sql)
+before connecting Slack. Google Sheets, Teams, and Telegram are deferred.
+Provider setup is in [Lead delivery](DELIVERY.md).
 
 ## Checks
 
@@ -38,6 +41,7 @@ With Node/npm installed:
 npm install
 npm run typecheck
 npm run test:db
+npm run test:delivery
 npm run test:background
 node scripts/test-reliability.mjs
 npm run check:cloud

@@ -13,6 +13,13 @@ export function validSlackUrl(value: string) {
       && /^\/services\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(url.pathname) && !url.username && !url.password && !url.port && !url.search && !url.hash;
   } catch { return false; }
 }
+export const deliveryProviderInput = z.object({
+  provider: z.enum(["slack"]),
+});
+export const deliveryToggleInput = deliveryProviderInput.extend({ enabled: z.boolean() });
+export const slackChannelInput = z.object({
+  channelId: z.string().trim().regex(/^[CG][A-Z0-9]{8,32}$/, "Choose a Slack channel"),
+});
 export const settingsInput = z.object({
   slackWebhookUrl: z.string().trim().max(512).refine(v => !v || validSlackUrl(v), { message: "Enter a valid HTTPS Slack incoming webhook URL" }).optional(),
   contactCriteria: z.object({

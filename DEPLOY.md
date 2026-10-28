@@ -27,6 +27,13 @@ Set these for **Production** and **Preview** (values are in your local `app/.env
 | `HOTNOW_DB_SCHEMA` | `hotnow` |
 | `APP_URL` | `https://app.hotnow.co` (optional; falls back to `VERCEL_URL`) |
 | `PARALLEL_WEBHOOK_SECRET` | `whsec_...` from Parallel → Settings → Webhooks (optional) |
+| `DELIVERY_TOKEN_KEY` | long random string; encrypts the Slack bot token. Optional until Slack is connected. |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Slack app OAuth client. Optional until Slack is connected. |
+
+Google Sheets, Microsoft Teams, and Telegram are deferred and are not required
+to run the app. Redirect URL and bot scopes are in [DELIVERY.md](DELIVERY.md). Apply
+[004_delivery_connections.sql](supabase/migrations/004_delivery_connections.sql)
+in the Supabase SQL editor before connecting Slack.
 
 **Current background processing:** Vercel can host the Next.js frontend and API,
 but this version also requires a separate always-on worker. Deploy the Docker
