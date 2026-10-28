@@ -131,5 +131,20 @@ try {
     await run('exempt-active', P1, S1);
     await assert.rejects(run('exempt-duplicate', P1, S1), /unique/i);
   });
+  await db.exec(await readFile(new URL('../supabase/migrations/004_delivery_connections.sql', import.meta.url), 'utf8'));
+  await check('delivery status is visible only to the workspace owner', async () => {
+    await db.query("insert into hotnow.delivery_connections(seller_profile_id, provider, status, destination_label) values ($1,'slack','connected','#leads')", [P1]);
+    assert.equal((await userQuery(A, 'select provider from hotnow.delivery_connections')).rows.length, 1);
+    assert.equal((await userQuery(B, 'select provider from hotnow.delivery_connections')).rows.length, 0);
+    await assert.rejects(userQuery(A, "insert into hotnow.delivery_connections(seller_profile_id, provider) values ($1,'teams')", [P1]), /permission denied/i);
+    await assert.rejects(userQuery(B, "insert into hotnow.delivery_connections(seller_profile_id, provider) values ($1,'teams')", [P1]), /permission denied|row-level security/i);
+  });
+  await check('delivery secrets stay on the server and follow the connection', async () => {
+    await db.query("insert into hotnow.delivery_secrets(seller_profile_id, provider, ciphertext) values ($1,'slack','cipher')", [P1]);
+    await assert.rejects(userQuery(A, 'select ciphertext from hotnow.delivery_secrets'), /permission denied/i);
+    await assert.rejects(userQuery(A, "insert into hotnow.delivery_secrets(seller_profile_id, provider, ciphertext) values ($1,'slack','x')", [P1]), /permission denied/i);
+    await db.query("delete from hotnow.delivery_connections where seller_profile_id=$1 and provider='slack'", [P1]);
+    assert.equal((await db.query('select count(*)::int as total from hotnow.delivery_secrets')).rows[0].total, 0);
+  });
   console.log(`${checks} database checks passed. No cloud credentials or paid calls used.`);
 } finally { await db.close(); }

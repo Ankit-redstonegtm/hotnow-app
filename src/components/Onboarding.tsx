@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/TopBar";
+import DeliveryConnections from "@/components/DeliveryConnections";
 
-type Step = "domain" | "studio";
+type Step = "domain" | "studio" | "deliver";
 type Profile = {
   company_name?: string; product_description?: string; target_customers?: string;
   problems_solved?: string; buyer_personas?: string[]; industries?: string[];
@@ -101,7 +102,7 @@ export default function Onboarding() {
               target_customers: pr.targetCustomers, problems_solved: pr.problemsSolved,
               buyer_personas: pr.buyerPersonas, industries: pr.industries });
             await loadOrGenerateSituations();
-            setStep("studio");
+            setStep(new URLSearchParams(window.location.search).get("deliver") === "1" ? "deliver" : "studio");
           } catch (e) { setError(msg(e)); } finally { setBusy(false); }
           return;
         }
@@ -135,7 +136,7 @@ export default function Onboarding() {
         const cc = settings.settings?.contactCriteria;
         if (cc?.jobLevels?.length) setLevels(cc.jobLevels);
         if (cc?.jobFunctions?.length) setFunctions(cc.jobFunctions);
-        setStep("studio");
+        setStep(new URLSearchParams(window.location.search).get("deliver") === "1" ? "deliver" : "studio");
       } catch { /* stay on domain step */ }
     })();
   }, []);
@@ -237,30 +238,42 @@ export default function Onboarding() {
   const toggleIn = (arr: string[], set: (v: string[]) => void, v: string) =>
     set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
+  async function saveTargeting() {
+    if (profile) {
+      await apiFetch("/api/seller", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+    }
+    const size = SIZE_RANGES[sizeIdx];
+    await apiJson("/api/icp", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        geographies: splitList(geographies),
+        industries: splitList(industries),
+        excludedIndustries: splitList(excluded),
+        sizeMin: size.min, sizeMax: size.max,
+        dailyTarget: perSignal,
+      }),
+    });
+    await apiJson("/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contactCriteria: { jobLevels: levels, jobFunctions: functions } }),
+    });
+  }
+
+  async function continueToDelivery() {
+    setLaunching(true); setError(null);
+    try {
+      await saveTargeting();
+      setStep("deliver");
+    } catch (err) { setError(msg(err)); }
+    finally { setLaunching(false); }
+  }
+
   async function launch() {
     setLaunching(true); setError(null);
     try {
-      if (profile) {
-        await apiFetch("/api/seller", {
-          method: "PATCH", headers: { "content-type": "application/json" },
-          body: JSON.stringify(profile),
-        });
-      }
-      const size = SIZE_RANGES[sizeIdx];
-      await apiJson("/api/icp", {
-        method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          geographies: splitList(geographies),
-          industries: splitList(industries),
-          excludedIndustries: splitList(excluded),
-          sizeMin: size.min, sizeMax: size.max,
-          dailyTarget: perSignal,
-        }),
-      });
-      await apiJson("/api/settings", {
-        method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contactCriteria: { jobLevels: levels, jobFunctions: functions } }),
-      });
       const res = await apiFetch("/api/discovery/start?max=2", { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "We could not start the search. Please try again.");
@@ -308,6 +321,29 @@ export default function Onboarding() {
   }
 
   // ---- studio: the three connected panels ----
+  if (step === "deliver") {
+    return (
+      <div className="min-h-dvh flex flex-col hero-wrap">
+        <TopBar />
+        <div className="mx-auto w-full max-w-2xl px-5 py-8 flex-1">
+          <button className="text-sm font-medium" style={{ color: "var(--muted)" }} onClick={() => setStep("studio")}>← Back to targeting</button>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mt-4">Where should new leads go?</h1>
+          <p className="text-sm mt-2 mb-6" style={{ color: "var(--muted)" }}>
+            Connect any of these. HotNow sends each new opportunity to every place you leave on. You can change this later in Settings.
+          </p>
+          {error && <div className="card p-3 mb-4 text-sm" style={{ color: "var(--accent)" }}>{error}</div>}
+          <DeliveryConnections variant="onboarding" />
+          <div className="flex flex-col sm:flex-row gap-2 mt-6">
+            <button className="btn btn-primary px-6 py-3 text-base" disabled={launching} onClick={launch}>
+              {launching ? "Starting the search" : "Find opportunities"}
+            </button>
+          </div>
+          <p className="text-xs mt-3" style={{ color: "var(--faint)" }}>You can start the search now and connect a destination later.</p>
+        </div>
+      </div>
+    );
+  }
+
   const size = SIZE_RANGES[sizeIdx];
   return (
     <div className="min-h-dvh flex flex-col hero-wrap">
@@ -459,8 +495,8 @@ export default function Onboarding() {
           <p className="text-sm hidden sm:block" style={{ color: "var(--muted)" }}>
             <b style={{ color: "var(--fg)" }}>{enabledCount}</b> signal{enabledCount === 1 ? "" : "s"} on · {size.label.toLowerCase()} · {geographies.split(",")[0] || "anywhere"}
           </p>
-          <button className="btn btn-primary px-6 py-3 text-base w-full sm:w-auto" disabled={launching || enabledCount === 0} onClick={launch}>
-            {launching ? "Starting the search" : "Find opportunities"}
+          <button className="btn btn-primary px-6 py-3 text-base w-full sm:w-auto" disabled={launching || enabledCount === 0} onClick={continueToDelivery}>
+            {launching ? "Saving" : "Continue"}
           </button>
         </div>
       </div>

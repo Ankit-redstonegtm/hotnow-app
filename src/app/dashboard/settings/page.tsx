@@ -1,41 +1,21 @@
 "use client";
 import { apiJson } from "@/lib/workspace";
 import { useEffect, useState } from "react";
+import DeliveryConnections from "@/components/DeliveryConnections";
 
 export default function SettingsPage() {
-  const [slack, setSlack] = useState("");
   const [company, setCompany] = useState("");
   const [domain, setDomain] = useState("");
-  const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
     apiJson("/api/settings").then((j) => {
-      const s = j.settings; if (s) { setSlack(s.slackWebhookUrl ?? ""); setCompany(s.companyName ?? ""); setDomain(s.domain ?? ""); }
+      const s = j.settings;
+      if (s) { setCompany(s.companyName ?? ""); setDomain(s.domain ?? ""); }
       setLoaded(true);
-    }).catch(error => { setLoadError(error.message); setLoaded(true); });
+    }).catch((error) => { setLoadError(error.message); setLoaded(true); });
   }, []);
-
-  async function save() {
-    if (saving) return; setSaving(true); setMsg(null);
-    try {
-    const r = await apiJson("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ slackWebhookUrl: slack }) });
-    setMsg("Saved."); return true;
-    } catch (error) { setMsg(error instanceof Error ? error.message : "Could not save"); return false; }
-    finally { setSaving(false); }
-  }
-  async function test() {
-    if (saving) return;
-    const saved = await save(); if (!saved) return;
-    setSaving(true); setMsg("Sending test…");
-    try {
-      await apiJson("/api/slack/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ test: true }) });
-      setMsg("Test sent. Check your Slack channel.");
-    } catch (error) { setMsg(error instanceof Error ? error.message : "Test delivery failed"); }
-    finally { setSaving(false); }
-  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -54,16 +34,10 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="card p-6">
-            <h2 className="font-semibold">Slack delivery</h2>
-            <p className="text-sm mt-1 mb-4" style={{ color: "var(--muted)" }}>Paste an <a className="underline" style={{ color: "var(--accent-ink)" }} href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noreferrer">incoming webhook URL</a>. Then push any list to that channel with one click.</p>
-            <label className="label" htmlFor="slack-webhook">Slack webhook URL</label>
-            <input id="slack-webhook" className="input" value={slack} onChange={(e) => setSlack(e.target.value)} placeholder="https://hooks.slack.com/services/..." />
-            <div className="flex items-center gap-3 mt-4">
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-              <button className="btn btn-ghost" onClick={test} disabled={!slack || saving}>Save & send test</button>
-              {msg && <span role="status" className="text-sm" style={{ color: "var(--muted)" }}>{msg}</span>}
-            </div>
+          <div>
+            <h2 className="font-semibold">Lead delivery</h2>
+            <p className="text-sm mt-1 mb-4" style={{ color: "var(--muted)" }}>New opportunities are sent to every destination you leave on.</p>
+            <DeliveryConnections variant="settings" />
           </div>
 
           <div className="card p-6">

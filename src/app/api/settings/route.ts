@@ -12,7 +12,7 @@ export async function GET() {
       settings: {
         companyName: p.company_name,
         domain: p.domain,
-        slackWebhookUrl: p.slack_webhook_url ?? "",
+        legacySlackWebhook: Boolean(p.slack_webhook_url),
         contactCriteria: p.contact_criteria ?? {},
       },
     });

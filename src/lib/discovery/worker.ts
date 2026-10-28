@@ -1,5 +1,8 @@
 import { validSlackUrl } from "@/lib/validation";
 import { appBaseUrl } from "@/lib/parallel-webhook";
+import { deliverProfile } from "@/lib/delivery/dispatch";
+import { loadWaveLeads } from "@/lib/delivery/leads";
+import { listConnections, selectTargets } from "@/lib/delivery/store";
 import { isTransientParallelError } from "@/lib/providers/parallel";
 // Result ingestion and notification helpers for the dedicated worker.
 
@@ -120,7 +123,7 @@ export async function ingestRun(admin: SB, run: any, situation?: BuyingSituation
 
 /**
  * When a seller's whole discovery wave has finished (no runs left queued/running),
- * send a single Slack notification with the count of genuinely-new opportunities.
+ * deliver the new opportunities to every connected destination.
  * Idempotent: the first caller to see the finished wave claims it via `notified_at`,
  * so the poll path and the webhook path can both call this without double-pinging.
  */
@@ -129,8 +132,10 @@ export async function notifyIfWaveComplete(admin: SB, sellerProfileId: string): 
   if (stillRunning.length > 0) return;
 
   const profile = await getSellerProfileById(admin, sellerProfileId);
-  const slack = profile?.slack_webhook_url;
-  if (!slack) return;
+  const legacy = typeof profile?.slack_webhook_url === "string" ? profile.slack_webhook_url : null;
+  let connections: Awaited<ReturnType<typeof listConnections>> = [];
+  try { connections = await listConnections(admin, sellerProfileId); } catch { connections = []; }
+  if (!selectTargets(connections, legacy).length) return;
 
   const since = Date.now() - 30 * 60 * 1000;
   const wave = (await getRuns(admin, sellerProfileId, ["completed", "failed"])).filter(
@@ -159,11 +164,16 @@ export async function notifyIfWaveComplete(admin: SB, sellerProfileId: string): 
   }
 
   const base = appBaseUrl() ?? "https://app.hotnow.co";
-  const text =
-    newCount > 0
-      ? `:fire: *HotNow* found *${newCount}* new ${newCount === 1 ? "opportunity" : "opportunities"} ready to review. ${base}/dashboard`
-      : `:mag: *HotNow* finished scanning your signals. No new opportunities this run.`;
-  await notifySlack(slack, text);
+  const summary = newCount > 0
+    ? `HotNow found ${newCount} new ${newCount === 1 ? "opportunity" : "opportunities"}. ${base}/dashboard`
+    : "HotNow finished scanning your signals. No new opportunities this run.";
+  let leads: Awaited<ReturnType<typeof loadWaveLeads>> = [];
+  if (newCount > 0) {
+    try { leads = await loadWaveLeads(admin, completedRunIds, base); } catch { leads = []; }
+  }
+  try {
+    await deliverProfile({ admin, profileId: sellerProfileId, legacyWebhook: legacy, summary, leads });
+  } catch { /* delivery is best-effort; the wave is already claimed */ }
 }
 
 /** POST a simple message to a Slack incoming-webhook URL. Never throws. */

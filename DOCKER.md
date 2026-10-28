@@ -2,7 +2,7 @@
 
 Docker runs a production Next.js container for the frontend/backend and a
 separate worker container for research and discovery. Supabase, Parallel AI,
-Blitz, and optional Slack remain cloud services.
+Blitz, and optional lead delivery remain cloud services.
 The Docker setup does not create accounts or apply database migrations.
 
 ## Start
