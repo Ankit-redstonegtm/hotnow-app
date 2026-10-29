@@ -29,6 +29,7 @@ Set these for **Production** and **Preview** (values are in your local `app/.env
 | `PARALLEL_WEBHOOK_SECRET` | `whsec_...` from Parallel → Settings → Webhooks (optional) |
 | `DELIVERY_TOKEN_KEY` | long random string; encrypts the Slack bot token. Optional until Slack is connected. |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Slack app OAuth client. Optional until Slack is connected. |
+| `ADMIN_EMAILS` | Comma-separated emails allowed to open `/admin`. Optional. Defaults to `ankit@redstonegtm.com`. Anyone else gets a 404. |
 
 Google Sheets, Microsoft Teams, and Telegram are deferred and are not required
 to run the app. Redirect URL and bot scopes are in [DELIVERY.md](DELIVERY.md). Apply
