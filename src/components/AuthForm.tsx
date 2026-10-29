@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { BrandWordmark } from "@/components/marks";
 
 export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
@@ -74,7 +75,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   return (
     <div className="min-h-dvh flex items-center justify-center px-4">
       <div className="card w-full max-w-sm p-8">
-        <Link href="/" className="font-semibold tracking-tight text-lg">Hot<span style={{ color: "var(--accent)" }}>Now</span></Link>
+        <Link href="/" className="inline-flex"><BrandWordmark className="text-lg" /></Link>
         <h1 className="mt-6 text-xl font-semibold tracking-tight">
           {mode === "signup" ? "Create your account" : "Welcome back"}
         </h1>

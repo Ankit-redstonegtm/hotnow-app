@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BuyingSituation, IcpConstraints, SellerProfile, Opportunity } from "../engine/types";
+import { createAdminClient } from "../supabase/admin";
 import { normalizeDomain } from "../util/domain";
 
 // Schema-agnostic client type (our clients target the `hotnow` schema, not `public`).
@@ -66,6 +67,92 @@ export async function getSellerProfileById(sb: SB, id: string) {
   const { data, error } = await sb.from("seller_profiles").select("*").eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+const JOBS_TABLE_MISSING = new Set(["PGRST205", "PGRST202", "42P01", "42883"]);
+
+async function linkedCompanyIds(admin: SB, workspaceId: string): Promise<string[]> {
+  const ids: string[] = [];
+  for (const table of ["opportunities", "contacts", "contact_sourcing"] as const) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await admin.from(table).select("company_id").eq("seller_profile_id", workspaceId).range(from, from + 999);
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) if (row.company_id) ids.push(row.company_id);
+      if (!data || data.length < 1000) break;
+    }
+  }
+  return [...new Set(ids)];
+}
+
+async function deleteUnreferencedCompanies(admin: SB, companyIds: string[]) {
+  if (!companyIds.length) return;
+  const keep = new Set<string>();
+  for (const table of ["opportunities", "contacts", "contact_sourcing"] as const) {
+    for (let i = 0; i < companyIds.length; i += 100) {
+      const slice = companyIds.slice(i, i + 100);
+      const { data, error } = await admin.from(table).select("company_id").in("company_id", slice);
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) if (row.company_id) keep.add(row.company_id);
+    }
+  }
+  const orphans = companyIds.filter((id) => !keep.has(id));
+  for (let i = 0; i < orphans.length; i += 100) {
+    const { error } = await admin.from("companies").delete().in("id", orphans.slice(i, i + 100));
+    // A concurrent ingest may have reused the company. Leaving that row is safe.
+    if (error && error.code !== "23503") throw new Error(error.message);
+  }
+}
+
+/**
+ * Hard-delete one workspace the signed-in user owns.
+ * Research, leads, contacts, lists, delivery, and jobs cascade with the profile.
+ * Prospect companies are shared, so only rows no longer referenced are removed.
+ */
+export async function deleteOwnedWorkspace(sb: SB, userId: string, workspaceId: string): Promise<{ remaining: number } | null> {
+  const { data: owned, error: ownError } = await sb.from("seller_profiles").select("id")
+    .eq("id", workspaceId).eq("user_id", userId).maybeSingle();
+  if (ownError) throw new Error(ownError.message);
+  if (!owned) return null;
+
+  const admin = createAdminClient();
+  const companyIds = await linkedCompanyIds(admin, workspaceId);
+  const stamp = new Date().toISOString();
+  const { error: jobError } = await admin.from("background_jobs").update({
+    status: "cancelled",
+    cancel_requested: true,
+    step: "Stopped because the company was removed",
+    finished_at: stamp,
+    updated_at: stamp,
+    locked_by: null,
+    locked_until: null,
+  }).eq("seller_profile_id", workspaceId).in("status", ["queued", "running", "retrying"]);
+  if (jobError && !JOBS_TABLE_MISSING.has(jobError.code ?? "")) throw new Error(jobError.message);
+
+  const { error: runError } = await sb.from("discovery_runs").update({
+    status: "cancelled",
+    completed_at: stamp,
+    error: "Company was removed",
+    ingestion_claimed_until: null,
+  }).eq("seller_profile_id", workspaceId).in("status", ["queued", "running"]);
+  if (runError) throw new Error(runError.message);
+
+  const { error: stopError } = await sb.from("seller_profiles").update({
+    research_status: "cancelled",
+    situations_status: "cancelled",
+    updated_at: stamp,
+  }).eq("id", workspaceId).eq("user_id", userId);
+  if (stopError) throw new Error(stopError.message);
+
+  const { data: removed, error: deleteError } = await sb.from("seller_profiles")
+    .delete().eq("id", workspaceId).eq("user_id", userId).select("id");
+  if (deleteError) throw new Error(deleteError.message);
+  if (!removed?.length) return null;
+
+  await deleteUnreferencedCompanies(admin, companyIds);
+  const { count, error: countError } = await sb.from("seller_profiles")
+    .select("id", { count: "exact", head: true }).eq("user_id", userId);
+  if (countError) throw new Error(countError.message);
+  return { remaining: count ?? 0 };
 }
 
 export async function updateSellerProfile(sb: SB, id: string, fields: Record<string, unknown>) {

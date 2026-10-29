@@ -1,4 +1,5 @@
 "use client";
+import { SlackMark } from "@/components/marks";
 import { apiJson } from "@/lib/workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -82,7 +83,9 @@ export default function DeliveryConnections({
       {error && <div className="card p-3 mb-3 text-sm" role="alert" style={{ color: "var(--accent-ink)" }}>{error}</div>}
       {notice && <div className="card p-3 mb-3 text-sm" role="status" style={{ color: "var(--muted)" }}>{notice}</div>}
       <div className="flex items-start gap-3">
-        <span className="inline-grid place-items-center h-9 w-9 rounded-lg text-sm font-bold shrink-0" style={{ background: "var(--accent-soft)", color: "var(--accent-ink)" }}>S</span>
+        <span className="inline-grid place-items-center h-9 w-9 rounded-lg shrink-0 bg-white border" style={{ borderColor: "var(--border)" }}>
+          <SlackMark size={22} />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="font-semibold text-sm">Slack</h2>
@@ -129,7 +132,12 @@ export default function DeliveryConnections({
                   method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnTo: destination }),
                 });
                 window.location.assign(data.url);
-              })}>Connect Slack</button>
+              })}>
+                <span className="inline-grid place-items-center h-[18px] w-[18px] rounded-[4px] bg-white">
+                  <SlackMark size={13} />
+                </span>
+                Connect Slack
+              </button>
             )}
             {connected && !legacyOnly && (
               <label className="text-xs flex items-center gap-1.5" style={{ color: "var(--muted)" }}>
