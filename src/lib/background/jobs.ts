@@ -3,6 +3,7 @@ import { companiesNeedingContacts, contactsNeedingEmail, countCompaniesNeedingCo
   saveContacts, setContactEmail, getSellerProfileById } from "@/lib/db/repo";
 import { sourceContactsForCompany } from "@/lib/engine/contacts";
 import { enrichEmail } from "@/lib/providers/blitz";
+import { createCreditSink, mergeProviderCredits } from "@/lib/providers/credits";
 
 export const missingJobsSchema = (error: any) => ["PGRST205", "PGRST202", "42P01", "42883"].includes(error?.code);
 export class JobsSetupError extends Error { constructor() { super("Background enrichment is not ready. Finish the database upgrade in workspace setup."); } }
@@ -46,22 +47,33 @@ export async function processEnrichmentJob(job: any, workerId: string) {
       return;
     }
     let found = 0;
+    const credits = createCreditSink();
     if (job.kind === "contacts") {
       const [company] = await companiesNeedingContacts(db, profile.id, 1);
       if (!company) throw new Error("Could not resolve the next company");
-      const { contacts } = await sourceContactsForCompany(company.domain, profile.contact_criteria || {});
+      const { contacts } = await sourceContactsForCompany(company.domain, profile.contact_criteria || {}, { credits });
       found = await saveContacts(db, { sellerProfileId: profile.id, companyId: company.companyId, opportunityId: company.opportunityId, contacts });
     } else {
       const [contact] = await contactsNeedingEmail(db, profile.id, 1, tiers);
       if (!contact) throw new Error("Could not resolve the next contact");
-      const email = await enrichEmail(contact.linkedin_url);
+      const email = await enrichEmail(contact.linkedin_url, credits);
       await setContactEmail(db, contact.id, email || "");
       found = email ? 1 : 0;
     }
-    await update({ step: job.kind === "contacts" ? "Finding decision-makers" : "Looking up work emails",
+    const providerCredits = mergeProviderCredits(job.provider_credits, credits.snapshot());
+    console.info(JSON.stringify({ event: "contact_provider_credits", jobId: job.id, kind: job.kind, credits: providerCredits }));
+    const progress = { step: job.kind === "contacts" ? "Finding decision-makers" : "Looking up work emails",
       completed_items: job.completed_items + 1, total_items: Math.max(job.total_items, job.completed_items + remaining),
       result_count: job.result_count + found, last_error: null, attempts: 0,
-      next_attempt_at: new Date(Date.now() + 500).toISOString() });
+      next_attempt_at: new Date(Date.now() + 500).toISOString() };
+    try {
+      await update({ ...progress, provider_credits: providerCredits });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!message.includes("provider_credits")) throw error;
+      console.warn("[contacts] provider_credits was not stored. Apply supabase/migrations/005_contact_provider_credits.sql.");
+      await update(progress);
+    }
   } catch (error) {
     const attempts = job.attempts + 1;
     const message = error instanceof Error ? error.message : "Enrichment failed";

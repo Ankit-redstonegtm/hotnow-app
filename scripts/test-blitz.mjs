@@ -9,9 +9,10 @@ const module = { exports: {} };
 new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(require, module, module.exports);
 const { sourceContactsForCompany } = module.exports;
 const company = 'https://www.linkedin.com/company/test';
-const fetchOriginal = globalThis.fetch, keyOriginal = process.env.BLITZ_API_KEY;
+const fetchOriginal = globalThis.fetch, keyOriginal = process.env.BLITZ_API_KEY, prospeoOriginal = process.env.PROSPEO_API_KEY;
 let responseMode = 'success', requests = [];
 process.env.BLITZ_API_KEY = 'offline-test';
+delete process.env.PROSPEO_API_KEY;
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body); requests.push({ url, body });
   if (url.endsWith('/domain-to-linkedin')) return Response.json({ found: true, company_linkedin_url: company });
@@ -52,11 +53,13 @@ try {
   globalThis.fetch = fetchOriginal;
   if (keyOriginal === undefined) delete process.env.BLITZ_API_KEY;
   else process.env.BLITZ_API_KEY = keyOriginal;
+  if (prospeoOriginal === undefined) delete process.env.PROSPEO_API_KEY;
+  else process.env.PROSPEO_API_KEY = prospeoOriginal;
 }
 if (process.argv.includes('--live')) {
   const result = await sourceContactsForCompany('hsbc.com', {
     countryCode: 'US', jobLevels: ['C-Team', 'Director'], jobFunctions: ['Operations', 'Sales & Business Development'],
-  }, { maxPerCall: 1 });
+  }, { maxPerCall: 1, enrich: false, useProspeo: false });
   assert.ok(result.companyLinkedin, 'domain must resolve');
   assert.ok(result.contacts.length > 0, 'known company must return a contact');
   assert.ok(result.contacts.some(c => c.title), 'returned contacts must include a title');

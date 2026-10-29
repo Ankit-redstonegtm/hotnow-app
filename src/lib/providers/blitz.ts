@@ -1,6 +1,8 @@
 // Blitz API provider - LinkedIn/contact data. Server-side only (BLITZ_API_KEY).
 // domain -> company LinkedIn -> decision-makers (employee finder).
 
+import type { CreditSink } from "./credits";
+
 const BASE = "https://api.blitz-api.ai";
 
 function key(): string {
@@ -9,7 +11,16 @@ function key(): string {
   return k;
 }
 
-async function call<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+function recordsUsed(json: any, headers: Headers): number | null {
+  const usage = json?.fair_usage;
+  const reported = usage?.records_used ?? usage?.used_records ?? usage?.records_consumed;
+  if (typeof reported === "number" && Number.isFinite(reported)) return reported;
+  const header = headers.get("x-records-used") ?? headers.get("x-credit-cost");
+  if (header != null && header !== "" && Number.isFinite(Number(header))) return Number(header);
+  return null;
+}
+
+async function call<T = any>(method: string, path: string, body?: unknown, credits?: CreditSink): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: { "x-api-key": key(), "content-type": "application/json" },
@@ -19,6 +30,7 @@ async function call<T = any>(method: string, path: string, body?: unknown): Prom
   const text = await res.text();
   let json: any;
   try { json = text ? JSON.parse(text) : {}; } catch { json = { _raw: text }; }
+  credits?.add("blitz", recordsUsed(json, res.headers));
   if (!res.ok) throw new Error(`Blitz ${method} ${path} -> ${res.status}: ${text.slice(0, 300)}`);
   return json as T;
 }
@@ -33,9 +45,9 @@ export interface BlitzEmployee {
 }
 
 /** Resolve a company domain to its LinkedIn company URL. */
-export async function domainToLinkedin(domain: string): Promise<string | null> {
+export async function domainToLinkedin(domain: string, credits?: CreditSink): Promise<string | null> {
   const clean = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
-  const r = await call<any>("POST", "/v2/enrichment/domain-to-linkedin", { domain: clean });
+  const r = await call<any>("POST", "/v2/enrichment/domain-to-linkedin", { domain: clean }, credits);
   if (r?.found && typeof r.company_linkedin_url === "string") return r.company_linkedin_url;
   return null;
 }
@@ -48,7 +60,7 @@ export async function employeeFinder(opts: {
   countryCode?: string;
   maxResults?: number;
   page?: number;
-}): Promise<{ employees: BlitzEmployee[]; totalPages: number }> {
+}, credits?: CreditSink): Promise<{ employees: BlitzEmployee[]; totalPages: number }> {
   const body: Record<string, unknown> = {
     company_linkedin_url: opts.companyLinkedinUrl,
     max_results: Math.min(opts.maxResults ?? 25, 50),
@@ -58,7 +70,7 @@ export async function employeeFinder(opts: {
   if (opts.jobFunction?.length) body.job_function = opts.jobFunction;
   if (opts.countryCode) body.country_code = [opts.countryCode.trim().toUpperCase()];
 
-  const r = await call<any>("POST", "/v2/search/employee-finder", body);
+  const r = await call<any>("POST", "/v2/search/employee-finder", body, credits);
   const list = [r.results, r.employees, r.data, r.people].find(Array.isArray) as any[] | undefined;
   // A changed/error response must not mark this company as successfully searched.
   if (!list) throw new Error("Blitz employee finder returned an unexpected response: missing results array");
@@ -67,9 +79,9 @@ export async function employeeFinder(opts: {
 }
 
 /** Find a verified work email for a person by their LinkedIn URL. */
-export async function enrichEmail(personLinkedinUrl: string): Promise<string | null> {
+export async function enrichEmail(personLinkedinUrl: string, credits?: CreditSink): Promise<string | null> {
   if (!personLinkedinUrl) return null;
-  const r = await call<any>("POST", "/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl });
+  const r = await call<any>("POST", "/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl }, credits);
   if (r?.found && typeof r.email === "string" && r.email.trim()) return r.email.trim();
   return null;
 }

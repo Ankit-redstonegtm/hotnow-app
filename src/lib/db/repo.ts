@@ -3,6 +3,7 @@
 // cross-user ingest writes (companies/candidates/opportunities) use the admin client.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { contactSourceLabel } from "../engine/contact-merge";
 import type { BuyingSituation, IcpConstraints, SellerProfile, Opportunity } from "../engine/types";
 import { normalizeDomain } from "../util/domain";
 
@@ -334,7 +335,7 @@ export async function countCompaniesNeedingContacts(sb: SB, sellerProfileId: str
 
 export async function saveContacts(
   admin: SB,
-  args: { sellerProfileId: string; companyId: string; opportunityId: string | null; contacts: Array<{ fullName: string; title: string; linkedinUrl: string; jobLevel?: string; jobFunction?: string; priority: string }> },
+  args: { sellerProfileId: string; companyId: string; opportunityId: string | null; contacts: Array<{ fullName: string; title: string; linkedinUrl: string; jobLevel?: string; jobFunction?: string; priority: string; email?: string; mobile?: string; sources?: string[] }> },
 ): Promise<number> {
   if (args.contacts.length) {
     const rows = args.contacts.map((c) => ({
@@ -343,14 +344,16 @@ export async function saveContacts(
       opportunity_id: args.opportunityId,
       full_name: c.fullName,
       title: c.title,
-      linkedin_url: c.linkedinUrl,
+      linkedin_url: c.linkedinUrl || null,
       job_level: c.jobLevel ?? null,
       job_function: c.jobFunction ?? null,
       priority: c.priority,
-      source: "blitz",
+      email: c.email || null,
+      mobile: c.mobile || null,
+      source: contactSourceLabel(c.sources),
     }));
     const { error } = await admin.from("contacts").upsert(rows, { onConflict: "seller_profile_id,company_id,linkedin_url", ignoreDuplicates: true });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message.includes("mobile") ? `${error.message} Apply supabase/migrations/005_contact_provider_credits.sql.` : error.message);
   }
   const { error } = await admin.from("contact_sourcing").upsert({ seller_profile_id: args.sellerProfileId, company_id: args.companyId, sourced_at: new Date().toISOString() });
   if (error) throw new Error(error.message);
