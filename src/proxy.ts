@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAdminEmail } from "./lib/admin/allowlist";
 import { DB_SCHEMA } from "./lib/supabase/schema";
 
 export async function proxy(request: NextRequest) {
@@ -42,6 +43,18 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", path);
     return NextResponse.redirect(url);
+  }
+  if (path === "/admin" || path.startsWith("/admin/")) {
+    if (!isAdminEmail(user?.email)) {
+      return new NextResponse("Not Found", {
+        status: 404,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
+          "x-robots-tag": "noindex",
+        },
+      });
+    }
   }
   return response;
 }
