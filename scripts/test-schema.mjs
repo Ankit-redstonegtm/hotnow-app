@@ -146,5 +146,27 @@ try {
     await db.query("delete from hotnow.delivery_connections where seller_profile_id=$1 and provider='slack'", [P1]);
     assert.equal((await db.query('select count(*)::int as total from hotnow.delivery_secrets')).rows[0].total, 0);
   });
+  await check('an owner can delete one domain without removing another user or a shared company', async () => {
+    const runId = (await db.query(
+      "insert into hotnow.discovery_runs(seller_profile_id,situation_id,provider_job_id,generator,match_limit,status) values ($1,$2,'delete-domain','base',5,'completed') returning id",
+      [P2, S2],
+    )).rows[0].id;
+    await db.query('update hotnow.opportunities set run_id=$1 where id=$2', [runId, O2]);
+    await db.query("insert into hotnow.contacts(seller_profile_id,company_id,opportunity_id,full_name,priority) values ($1,$2,$3,'Ada','P1')", [P2, C1, O2]);
+    await db.query("insert into hotnow.background_jobs(seller_profile_id,kind,status) values ($1,'emails','queued')", [P2]);
+    assert.equal((await userQuery(B, 'delete from hotnow.seller_profiles where id=$1 returning id', [P2])).rows.length, 0);
+    await db.exec('begin; set local role authenticated;');
+    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [A]);
+    const deleted = await db.query('delete from hotnow.seller_profiles where id=$1 returning id', [P2]);
+    assert.equal(deleted.rows.length, 1);
+    await db.exec('commit');
+    assert.equal((await db.query('select count(*)::int as n from hotnow.seller_profiles where id=$1', [P2])).rows[0].n, 0);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.opportunities where seller_profile_id=$1', [P2])).rows[0].n, 0);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.contacts where seller_profile_id=$1', [P2])).rows[0].n, 0);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.discovery_runs where seller_profile_id=$1', [P2])).rows[0].n, 0);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.background_jobs where seller_profile_id=$1', [P2])).rows[0].n, 0);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.companies where id=$1', [C1])).rows[0].n, 1);
+    assert.equal((await db.query('select count(*)::int as n from hotnow.seller_profiles where id=$1', [P1])).rows[0].n, 1);
+  });
   console.log(`${checks} database checks passed. No cloud credentials or paid calls used.`);
 } finally { await db.close(); }

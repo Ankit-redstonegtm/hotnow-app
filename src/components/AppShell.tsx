@@ -1,5 +1,6 @@
 "use client";
 import ActivityProvider from "./ActivityProvider";
+import { BrandWordmark } from "./marks";
 import Link from "next/link";
 import ParallelActivity from "./ParallelActivity";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
@@ -68,9 +69,8 @@ export default function AppShell({
         }}
         data-open={open}
       >
-        <div className="px-4 h-14 flex items-center gap-2 border-b" style={{ borderColor: "var(--border)" }}>
-          <span className="inline-grid place-items-center h-7 w-7 rounded-lg text-white font-bold" style={{ background: "var(--accent)" }}>H</span>
-          <span className="font-semibold tracking-tight">Hot<span style={{ color: "var(--accent)" }}>Now</span></span>
+        <div className="px-4 h-14 flex items-center border-b" style={{ borderColor: "var(--border)" }}>
+          <BrandWordmark tile />
         </div>
         <WorkspaceSwitcher initialId={workspaceId} initialName={companyName} initialDomain={companyDomain} />
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">

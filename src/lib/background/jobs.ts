@@ -33,12 +33,15 @@ export async function processEnrichmentJob(job: any, workerId: string) {
     if (error) throw new Error(error.message);
   };
   try {
-    const { data: latest, error } = await db.from("background_jobs").select("cancel_requested,locked_by,status").eq("id", job.id).single();
+    const { data: latest, error } = await db.from("background_jobs").select("cancel_requested,locked_by,status").eq("id", job.id).maybeSingle();
     if (error) throw new Error(error.message);
-    if (latest.locked_by !== workerId || latest.status !== "running") return;
+    if (!latest || latest.locked_by !== workerId || latest.status !== "running") return;
     if (latest.cancel_requested) { await update({ status: "cancelled", step: "Stopped before the next batch", finished_at: new Date().toISOString() }); return; }
     const profile = await getSellerProfileById(db, job.seller_profile_id);
-    if (!profile) throw new Error("Company workspace no longer exists");
+    if (!profile) {
+      await update({ status: "cancelled", cancel_requested: true, step: "Stopped because the company was removed", finished_at: new Date().toISOString() });
+      return;
+    }
     const tiers = job.options?.all ? undefined : ["P1", "P2"];
     const remaining = job.kind === "contacts" ? await countCompaniesNeedingContacts(db, profile.id) : await countContactsNeedingEmail(db, profile.id, tiers);
     if (!remaining) {
@@ -75,6 +78,12 @@ export async function processEnrichmentJob(job: any, workerId: string) {
       await update(progress);
     }
   } catch (error) {
+    let removed = false;
+    try { removed = !(await getSellerProfileById(db, job.seller_profile_id)); } catch { removed = false; }
+    if (removed) {
+      await update({ status: "cancelled", cancel_requested: true, step: "Stopped because the company was removed", finished_at: new Date().toISOString() });
+      return;
+    }
     const attempts = job.attempts + 1;
     const message = error instanceof Error ? error.message : "Enrichment failed";
     const permanent = /-> (400|401|403|404|422)|not set|no longer exists/.test(message);

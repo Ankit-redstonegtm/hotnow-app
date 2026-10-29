@@ -2,7 +2,7 @@
 // request handler or browser timer. A bounded pool avoids one slow job blocking others.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { startResearch, finishResearch, launchDiscovery, type SellerIntelligence } from "@/lib/engine";
-import { updateSellerProfile, upsertIcp, replaceSituations, getIcp, getSituations, updateRun, getFreshPrewarm } from "@/lib/db/repo";
+import { updateSellerProfile, upsertIcp, replaceSituations, getIcp, getSituations, updateRun, getFreshPrewarm, getSellerProfileById } from "@/lib/db/repo";
 import { ingestRun, notifyIfWaveComplete, toSituation } from "@/lib/discovery/worker";
 import { discoveryWebhookUrl } from "@/lib/parallel-webhook";
 import { isTransientClayError } from "@/lib/providers/clay";
@@ -18,8 +18,15 @@ async function checked(query: any) {
   return result.data ?? [];
 }
 
+async function sellerLive(db: ReturnType<typeof createAdminClient>, id: string) {
+  const { data, error } = await db.from("seller_profiles").select("id").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
 async function profileJob(row: any, kind: "research" | "situations") {
   const db = createAdminClient(), statusKey = `${kind}_status`, taskKey = `${kind}_task_id`;
+  if (!(await sellerLive(db, row.id))) return;
   let state = row[statusKey];
   try {
     if (state === "queued") {
@@ -42,8 +49,10 @@ async function profileJob(row: any, kind: "research" | "situations") {
     if (!row[taskKey]) throw new Error("Missing provider task ID. Please retry.");
     const intelligence = await finishResearch(row[taskKey], row.domain);
     if (!intelligence) return;
+    if (!(await sellerLive(db, row.id))) return;
     await persistIntelligence(db, row, intelligence);
   } catch (error) {
+    if (!(await sellerLive(db, row.id))) return;
     if (state !== "starting" && isTransientClayError(error)) return;
     await updateSellerProfile(db, row.id, { [statusKey]: "failed",
       raw_research: { ...row.raw_research, _background: { ...row.raw_research?._background,
@@ -75,6 +84,13 @@ async function persistIntelligence(db: ReturnType<typeof createAdminClient>, row
 
 async function discoveryJob(row: any) {
   const db = createAdminClient();
+  const { data: fresh, error: freshError } = await db.from("discovery_runs").select("id,status").eq("id", row.id).maybeSingle();
+  if (freshError) throw new Error(freshError.message);
+  if (!fresh || !["queued", "running"].includes(fresh.status)) return;
+  if (!(await getSellerProfileById(db, row.seller_profile_id))) {
+    await updateRun(db, row.id, { status: "cancelled", completed_at: stamp(), error: "Company was removed", ingestion_claimed_until: null });
+    return;
+  }
   if (row.status === "queued") {
     const claimed = await checked(db.from("discovery_runs").update({ status: "running",
       ingestion_claimed_until: new Date(Date.now() + 5 * 60_000).toISOString() }).eq("id", row.id).eq("status", "queued").select("id"));
@@ -86,6 +102,10 @@ async function discoveryJob(row: any) {
       const { runId } = await launchDiscovery(toSituation(situation), icp, { matchLimit: row.match_limit, webhookUrl: discoveryWebhookUrl() });
       await updateRun(db, row.id, { provider_job_id: runId, ingestion_claimed_until: null, error: null });
     } catch (error) {
+      if (!(await getSellerProfileById(db, row.seller_profile_id))) {
+        await updateRun(db, row.id, { status: "cancelled", completed_at: stamp(), error: "Company was removed", ingestion_claimed_until: null });
+        return;
+      }
       await updateRun(db, row.id, { status: "failed", completed_at: stamp(), error: error instanceof Error ? error.message : "Launch failed" });
     }
     return;

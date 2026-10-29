@@ -31,7 +31,7 @@ export default function WorkspaceSwitcher({ initialId, initialName, initialDomai
   }, [open]);
 
   useEffect(() => {
-    if (open) list.current?.querySelectorAll<HTMLButtonElement>('[role="option"]')[focused]?.focus();
+    if (open) list.current?.querySelectorAll<HTMLElement>('[role="option"]')[focused]?.focus();
   }, [open, focused]);
   useEffect(() => {
     const id = sessionStorage.getItem("hotnow_workspace") || initialId;
@@ -43,6 +43,44 @@ export default function WorkspaceSwitcher({ initialId, initialName, initialDomai
       setWorkspaces(data.workspaces || []);
     }).catch(e => setError(String(e.message)));
   }, [initialId]);
+
+  async function remove(workspace: Workspace) {
+    if (!window.confirm("Delete this domain? Its leads and research will be removed.")) return;
+    setOpen(false);
+    setBusy(true); setError("");
+    try {
+      const res = await apiFetch(`/api/workspaces?id=${encodeURIComponent(workspace.id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not delete this domain.");
+      const rest = workspaces.filter((item) => item.id !== workspace.id);
+      if (!rest.length || data.remaining === 0) {
+        sessionStorage.removeItem("hotnow_workspace");
+        window.location.assign("/onboarding");
+        return;
+      }
+      if (workspace.id === active) {
+        const next = rest[0];
+        if (!next) {
+          sessionStorage.removeItem("hotnow_workspace");
+          window.location.assign("/onboarding");
+          return;
+        }
+        const switchRes = await apiFetch("/api/workspaces", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: next.id }),
+        });
+        const switchData = await switchRes.json();
+        if (!switchRes.ok) throw new Error(switchData.error || "Could not switch company");
+        selectWorkspace(next.id);
+        window.location.assign(next.research_status === "done" ? "/dashboard" : "/onboarding");
+        return;
+      }
+      setWorkspaces(rest);
+      setBusy(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete this domain.");
+      setBusy(false);
+    }
+  }
 
   async function change(id: string) {
     setOpen(false);
@@ -106,16 +144,26 @@ export default function WorkspaceSwitcher({ initialId, initialName, initialDomai
     {open && <div className="workspace-menu">
       <div className="workspace-menu-heading"><span>Switch company</span><span>{workspaces.length}</span></div>
       <div id={`${id}-list`} role="listbox" aria-label="Your companies" className="workspace-options" ref={list} onKeyDown={menuKey}>
-        {workspaces.map((workspace, index) => <button type="button" key={workspace.id} role="option"
+        {workspaces.map((workspace, index) => <div key={workspace.id} role="option"
           aria-selected={workspace.id === active} tabIndex={index === focused ? 0 : -1}
-          className="workspace-option" onFocus={() => setFocused(index)} onClick={() => void change(workspace.id)}>
+          className="workspace-option" onFocus={() => setFocused(index)}
+          onClick={() => void change(workspace.id)}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void change(workspace.id); }
+          }}>
           <span className="workspace-option-avatar" aria-hidden="true"><CompanyIcon /></span>
           <span className="workspace-copy">
             <span className="workspace-name" title={workspace.company_name || workspace.domain}>{workspace.company_name || workspace.domain}</span>
             <span className="workspace-domain" title={workspace.domain}>{workspace.domain}</span>
           </span>
-          {workspace.id === active && <svg className="workspace-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>}
-        </button>)}
+          <span className="workspace-option-actions">
+            {workspace.id === active && <svg className="workspace-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>}
+            <button type="button" className="workspace-delete" disabled={busy} aria-label={`Delete ${workspace.domain}`}
+              onClick={(event) => { event.stopPropagation(); void remove(workspace); }}
+              onKeyDown={(event) => event.stopPropagation()}>Delete</button>
+          </span>
+        </div>)}
       </div>
     </div>}
     </div>

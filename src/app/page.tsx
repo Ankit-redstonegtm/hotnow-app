@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandWordmark } from "@/components/marks";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -10,7 +11,7 @@ export default async function Home() {
   return (
     <main className="min-h-dvh flex flex-col">
       <header className="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto w-full">
-        <span className="font-semibold tracking-tight text-lg">Hot<span style={{ color: "var(--accent)" }}>Now</span></span>
+        <BrandWordmark className="text-lg" />
         <nav className="flex items-center gap-2">
           <Link href="/login" className="btn btn-ghost">Log in</Link>
           <Link href="/signup" className="btn btn-primary">Get started</Link>
