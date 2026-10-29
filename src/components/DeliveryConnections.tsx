@@ -14,7 +14,21 @@ type Connection = {
 };
 type SlackChannel = { id: string; name: string; isPrivate: boolean };
 
-export default function DeliveryConnections({ variant }: { variant: "settings" | "onboarding" }) {
+export default function DeliveryConnections({
+  variant,
+  returnTo,
+  description,
+  footnote,
+  defer = false,
+}: {
+  variant: "settings" | "onboarding";
+  /** Overrides the OAuth return. Research wait uses /onboarding?resume=1. */
+  returnTo?: string;
+  description?: string;
+  footnote?: string;
+  /** Skip the delivery request until a workspace exists. */
+  defer?: boolean;
+}) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -30,6 +44,7 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
   }, []);
 
   useEffect(() => {
+    if (defer) return;
     const code = new URLSearchParams(window.location.search).get("deliveryError");
     const messages: Record<string, string> = {
       cancelled: "Slack connection was cancelled.",
@@ -38,7 +53,7 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
     };
     if (code) setError(messages[code] || "Could not connect Slack. Try again.");
     load().catch((err) => setError(err instanceof Error ? err.message : "Could not load Slack"));
-  }, [load]);
+  }, [load, defer]);
 
   useEffect(() => {
     if (connection?.status !== "pending" || !connection.ready || channels || channelAttempt.current) return;
@@ -59,6 +74,8 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
   const legacyOnly = Boolean(connection?.legacy && connection.destinationLabel === "Incoming webhook");
   const status = connection?.status ?? "disconnected";
   const connected = status === "connected";
+  const unavailable = Boolean(connection && !connection.ready && status === "disconnected");
+  const detail = slackDetail(description, status, connected, unavailable);
 
   return (
     <section className="card p-4 sm:p-5">
@@ -69,12 +86,12 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="font-semibold text-sm">Slack</h2>
-            <Status status={status} />
+            {(!description || connection) && <Status status={status} />}
           </div>
-          <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Install HotNow in Slack and pick the channel that should receive new opportunities.</p>
+          <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{detail}</p>
           {connection?.destinationLabel && <p className="text-sm mt-2 font-medium">{connection.destinationLabel}{connection.displayName && connection.displayName !== connection.destinationLabel ? ` · ${connection.displayName}` : ""}</p>}
           {connection?.lastError && <p className="text-xs mt-2" style={{ color: "var(--accent-ink)" }}>{connection.lastError}</p>}
-          {!connection?.ready && status === "disconnected" && <p className="text-xs mt-2" style={{ color: "var(--faint)" }}>Slack is not available on this server yet.</p>}
+          {!description && unavailable && <p className="text-xs mt-2" style={{ color: "var(--faint)" }}>Slack is not available on this server yet.</p>}
           {connection?.legacy && !legacyOnly && (
             <p className="text-xs mt-3" style={{ color: "var(--muted)" }}>
               An older incoming webhook is still saved.
@@ -103,12 +120,13 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
           {connected && !showChannels && !legacyOnly && (
             <button className="text-xs mt-3 font-medium" style={{ color: "var(--accent-ink)" }} onClick={() => setShowChannels(true)}>Change channel</button>
           )}
+          {(connection?.ready || connected || status === "pending" || status === "error") && (
           <div className="flex flex-wrap items-center gap-2 mt-3">
             {!connected && status !== "pending" && connection?.ready && (
               <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run("slack", async () => {
-                const returnTo = variant === "onboarding" ? "/onboarding" : "/dashboard/settings";
+                const destination = returnTo ?? (variant === "onboarding" ? "/onboarding" : "/dashboard/settings");
                 const data = await apiJson<{ url: string }>("/api/delivery/slack/start", {
-                  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnTo }),
+                  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnTo: destination }),
                 });
                 window.location.assign(data.url);
               })}>Connect Slack</button>
@@ -135,10 +153,22 @@ export default function DeliveryConnections({ variant }: { variant: "settings" |
               })}>{connected ? "Disconnect" : "Cancel"}</button>
             )}
           </div>
+          )}
+          {footnote && !connected && <p className="text-xs mt-3" style={{ color: "var(--faint)" }}>{footnote}</p>}
         </div>
       </div>
     </section>
   );
+}
+
+const DEFAULT_SLACK_DETAIL = "Install HotNow in Slack and pick the channel that should receive new opportunities.";
+
+export function slackDetail(description: string | undefined, status: Connection["status"], connected: boolean, unavailable: boolean) {
+  if (!description) return DEFAULT_SLACK_DETAIL;
+  if (unavailable) return "Slack is not available on this server yet.";
+  if (connected) return "Slack is ready. New opportunities will arrive in your channel.";
+  if (status === "pending") return "Pick the channel that should receive new opportunities.";
+  return description;
 }
 
 function Status({ status }: { status: Connection["status"] }) {

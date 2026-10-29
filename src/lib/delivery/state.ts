@@ -10,10 +10,20 @@ export type OAuthState = {
   returnTo: string;
 };
 
-const RETURNS = new Set(["/onboarding", "/dashboard/settings"]);
+const RETURNS = new Set(["/onboarding", "/onboarding?resume=1", "/dashboard/settings"]);
 
 export function safeReturnPath(value: unknown): string {
   return typeof value === "string" && RETURNS.has(value) ? value : "/dashboard/settings";
+}
+
+// /onboarding is the deliver step and comes back with ?deliver=1.
+// /onboarding?resume=1 is the research wait. It returns to /onboarding with no
+// deliver flag so polling can finish and the studio still comes next.
+export function oauthReturnTarget(returnTo: string): { pathname: string; deliver: boolean } {
+  const stored = safeReturnPath(returnTo);
+  if (stored === "/onboarding?resume=1") return { pathname: "/onboarding", deliver: false };
+  if (stored === "/onboarding") return { pathname: "/onboarding", deliver: true };
+  return { pathname: stored, deliver: false };
 }
 
 export function oauthBaseUrl(req: Request): string {
@@ -29,9 +39,9 @@ export function oauthBaseUrl(req: Request): string {
 }
 
 export function appRedirect(req: Request, returnTo: string, params: Record<string, string> = {}) {
-  const path = safeReturnPath(returnTo);
-  const target = new URL(path, oauthBaseUrl(req));
-  if (path === "/onboarding") target.searchParams.set("deliver", "1");
+  const { pathname, deliver } = oauthReturnTarget(returnTo);
+  const target = new URL(pathname, oauthBaseUrl(req));
+  if (deliver) target.searchParams.set("deliver", "1");
   for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
   return target;
 }
